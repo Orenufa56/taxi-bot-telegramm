@@ -63,8 +63,7 @@ def validate_time(time_str: str) -> bool:
 
 # ========== КЛАВИАТУРЫ ==========
 def get_main_keyboard():
-    """Главная клавиатура"""
-    keyboard = ReplyKeyboardMarkup(
+    return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🚕 Новый заказ")],
             [KeyboardButton(text="❓ Частые вопросы"), KeyboardButton(text="❌ Отмена")],
