@@ -120,14 +120,17 @@ def validate_time(time_str: str) -> bool:
 # ========== ОТПРАВКА ЗАКАЗА ДИСПЕТЧЕРУ ==========
 async def send_order_to_dispatcher(order: dict, user_id: int, username: str = None):
     """Отправляет заказ диспетчеру"""
+    # Получаем комментарий, если его нет - ставим "Без комментария"
+    comment = order.get('comment', 'Без комментария')
+    
     order_text = (
         f"🚕 **НОВЫЙ ЗАКАЗ!**\n\n"
-        f"👤 Клиент: {order['username']}\n"
-        f"📍 Откуда: {order['from_city']}\n"
-        f"🏁 Куда: {order['to_city']}\n"
-        f"⏰ Время: {order['time']}\n"
-        f"📞 Телефон: {order['phone']}\n"
-        f"💬 Комментарий: {order['comment']}\n\n"
+        f"👤 Клиент: {order.get('username', 'Не указано')}\n"
+        f"📍 Откуда: {order.get('from_city', 'Не указано')}\n"
+        f"🏁 Куда: {order.get('to_city', 'Не указано')}\n"
+        f"⏰ Время: {order.get('time', 'Не указано')}\n"
+        f"📞 Телефон: {order.get('phone', 'Не указано')}\n"
+        f"💬 Комментарий: {comment}\n\n"
         f"📱 Telegram: @{username if username else user_id}"
     )
     await bot.send_message(
