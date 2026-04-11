@@ -1,7 +1,31 @@
+# Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+*.pyd
+.Python
+*.so
+*.dll
+*.exe
+
+# Виртуальное окружение
 venv/
+env/
+ENV/
+.venv/
+
+# Файлы с секретами
+.env
+.env.local
+
+# Редакторы кода
 .idea/
 .vscode/
+*.swp
+*.swo
+
+# Логи
 *.log
+
+# Файлы для Render
+*.pid
