@@ -12,7 +12,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemo
 
 # ========== НАСТРОЙКИ - ЗАМЕНИТЕ НА СВОИ! ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-DISPATCHER_CHAT_ID = os.environ.get("DISPATCHER_CHAT_ID")
+DISPATCHER_CHAT_ID = "-1003980266463"
 # ====================================================
 
 logging.basicConfig(level=logging.INFO)
