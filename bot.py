@@ -75,18 +75,19 @@ def get_main_keyboard():
     return keyboard
 
 def get_faq_keyboard():
-    """Клавиатура с часто задаваемыми вопросами"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.keyboard = [
-        [KeyboardButton(text="💰 Стоимость проезда")],
-        [KeyboardButton(text="⏰ Время выезда"), KeyboardButton(text="🕐 Время в пути")],
-        [KeyboardButton(text="📦 Посылки"), KeyboardButton(text="🚕 Забрать до адреса")],
-        [KeyboardButton(text="📍 Точки отправления")],
-        [KeyboardButton(text="🐕 Животные"), KeyboardButton(text="🧳 Багаж")],
-        [KeyboardButton(text="🚭 Курить в машине")],
-        [KeyboardButton(text="📞 Контакты")],
-        [KeyboardButton(text="🔙 Назад")]
-    ]
+    keyboard = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="💰 Стоимость проезда")],
+            [KeyboardButton(text="⏰ Время выезда"), KeyboardButton(text="🕐 Время в пути")],
+            [KeyboardButton(text="📦 Посылки"), KeyboardButton(text="🚕 Забрать до адреса")],
+            [KeyboardButton(text="📍 Точки отправления")],
+            [KeyboardButton(text="🐕 Животные"), KeyboardButton(text="🧳 Багаж")],
+            [KeyboardButton(text="🚭 Курить в машине")],
+            [KeyboardButton(text="📞 Контакты")],
+            [KeyboardButton(text="🔙 Назад")]
+        ],
+        resize_keyboard=True
+    )
     return keyboard
 
 def get_cities_keyboard():
