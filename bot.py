@@ -11,8 +11,8 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 # ========== НАСТРОЙКИ - ЗАМЕНИТЕ НА СВОИ! ==========
-BOT_TOKEN = "YOUR_BOT_TOKEN"  # Токен от @BotFather
-DISPATCHER_CHAT_ID = "DISPATCHER_CHAT_ID"  # Ваш ID Telegram (узнайте у @userinfobot)
+BOT_TOKEN = "8699949039:AAEjRSTHOwcTY0xShRk7y-ReXiuq0iEoJdg"
+DISPATCHER_CHAT_ID = "-5044067256"
 # ====================================================
 
 logging.basicConfig(level=logging.INFO)
