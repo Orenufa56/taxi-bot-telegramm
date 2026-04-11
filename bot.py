@@ -120,7 +120,7 @@ def validate_time(time_str: str) -> bool:
 # ========== ОТПРАВКА ЗАКАЗА ДИСПЕТЧЕРУ ==========
 async def send_order_to_dispatcher(order: dict, user_id: int, username: str = None):
     """Отправляет заказ диспетчеру"""
-    # Получаем комментарий, если его нет - ставим "Без комментария"
+    # Безопасное получение комментария
     comment = order.get('comment', 'Без комментария')
     
     order_text = (
