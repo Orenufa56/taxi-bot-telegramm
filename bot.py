@@ -8,7 +8,7 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
@@ -138,13 +138,31 @@ async def cmd_start(message: types.Message, state: FSMContext):
     
     # Если сообщение из группы
     if chat_id != user_id:
-        welcome_text = (
-            "🚕 **Бот для заказа такси**\n\n"
-            "Чтобы оформить заказ, перейдите в личные сообщения с ботом:\n"
-            "➡️ @UfaOren56bot\n\n"
-            "Нажмите /start там, чтобы начать работу."
+        # Создаём кнопку-ссылку на бота
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text="🚕 Перейти к боту", url="https://t.me/UfaOren56bot")]
+            ]
         )
-        await message.answer(welcome_text)
+        
+        rules_text = (
+            "🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
+            "📋 **Правила пользования:**\n\n"
+            "1️⃣ Для оформления заказа нажмите на кнопку ниже\n"
+            "2️⃣ В личном чате с ботом нажмите /start\n"
+            "3️⃣ Выберите '🚕 Новый заказ' и следуйте инструкциям\n\n"
+            "💰 **Стоимость:**\n"
+            "• Место: 2300 руб.\n"
+            "• 4-местное авто: 9200 руб.\n"
+            "• 6-местное авто: 13800 руб.\n\n"
+            "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00, 22:00, 23:00\n\n"
+            "📍 **Точки отправления:**\n"
+            "• Оренбург: ТЦ Север\n"
+            "• Уфа: Универмаг 'Уфа'\n\n"
+            "📞 **Контакты диспетчера:** +7 9292 80 7979\n\n"
+            "❓ **По всем вопросам обращайтесь к диспетчеру**"
+        )
+        await message.answer(rules_text, reply_markup=keyboard, parse_mode="Markdown")
         return
     
     # Личное сообщение — показываем кнопки
