@@ -445,10 +445,11 @@ async def faq_contacts(message: types.Message):
 
 @dp.message(F.text == "🔙 Назад")
 async def back_to_faq(message: types.Message):
+    # Возвращаемся в главное меню
     await message.answer(
-        "❓ **Часто задаваемые вопросы**\n\n"
-        "Выберите интересующий вас вопрос:",
-        reply_markup=get_faq_keyboard()
+        "🔙 **Главное меню**\n\n"
+        "👇 **Нажмите на кнопку ниже, чтобы начать**",
+        reply_markup=get_main_keyboard()
     )
 
 # ========== ОСНОВНОЙ ХЭНДЛЕР ЗАКАЗА (FSM) ==========
