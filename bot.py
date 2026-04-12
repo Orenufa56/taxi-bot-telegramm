@@ -193,6 +193,9 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
+    # ВСЕГДА отвечаем (для отладки)
+    await message.answer(f"DEBUG: user_id={user_id}, chat_id={chat_id}")
+    
     # Если сообщение из группы
     if chat_id != user_id:
         rules_text = (
