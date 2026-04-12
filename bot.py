@@ -508,6 +508,8 @@ async def process_to_city(message: types.Message, state: FSMContext):
         reply_markup=ReplyKeyboardRemove()
     )
 
+# ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ С ПРОВЕРКОЙ ДАТЫ ==========
+
 @dp.message(StateFilter(OrderForm.waiting_time))
 async def process_time(message: types.Message, state: FSMContext):
     formatted_time = format_time_with_dots(message.text)
@@ -515,14 +517,46 @@ async def process_time(message: types.Message, state: FSMContext):
     if not validate_time(formatted_time):
         await message.answer(
             f"❌ **Неверный формат!**\n\n"
-            f"Вы ввели: {formatted_time}\n\n"
             f"Используйте формат: `04.04.26 в 15:00`\n\n"
-            f"📝 **Примеры:**\n"
-            f"• 2504261500 → 25.04.26 в 15:00\n"
-            f"• 25042615 → 25.04.26 в 15:\n\n"
-            f"💡 **Совет:** просто вводите цифры подряд, точки поставятся сами"
+            f"📝 **Пример:** 2504261500 → 25.04.26 в 15:00"
         )
         return
+    
+    # ПРОВЕРКА: ДАТА НЕ ДОЛЖНА БЫТЬ ПРОШЕДШЕЙ
+    try:
+        # Извлекаем дату из строки (формат: 25.04.26 в 15:00)
+        date_part = formatted_time.split(' в ')[0]
+        time_part = formatted_time.split(' в ')[1]
+        
+        # Преобразуем в объект datetime
+        order_datetime = datetime.strptime(f"{date_part} {time_part}", "%d.%m.%y %H:%M")
+        current_datetime = datetime.now()
+        
+        # Если дата уже прошла
+        if order_datetime < current_datetime:
+            await message.answer(
+                f"❌ **Нельзя указать прошедшую дату!**\n\n"
+                f"Вы указали: {formatted_time}\n"
+                f"Текущее время: {current_datetime.strftime('%d.%m.%y в %H:%M')}\n\n"
+                f"📅 **Пожалуйста, укажите дату и время в будущем.**\n\n"
+                f"💡 **Совет:** выберите завтра или позже."
+            )
+            return
+        
+        # Дополнительная проверка: если дата сегодня, но время уже прошло
+        if order_datetime.date() == current_datetime.date() and order_datetime.time() < current_datetime.time():
+            await message.answer(
+                f"❌ **Указанное время уже прошло!**\n\n"
+                f"Вы указали: {formatted_time}\n"
+                f"Сейчас: {current_datetime.strftime('%H:%M')}\n\n"
+                f"⏰ **Пожалуйста, укажите время в будущем.**"
+            )
+            return
+            
+    except Exception as e:
+        logging.error(f"Ошибка проверки даты: {e}")
+        # Если ошибка при проверке, пропускаем (но лучше предупредить)
+        pass
     
     await state.update_data(time=formatted_time)
     await state.set_state(OrderForm.waiting_phone)
@@ -530,10 +564,7 @@ async def process_time(message: types.Message, state: FSMContext):
     await message.answer(
         f"⏰ **Время подачи:** {formatted_time}\n\n"
         f"📞 **Ваш номер телефона**\n\n"
-        f"📝 **Примеры ввода:**\n"
-        f"• 89001234567\n"
-        f"• +7-900-123-45-67\n"
-        f"• 8 900 123 45 67"
+        f"📝 **Примеры:** 89001234567, +7-900-123-45-67"
     )
 
 @dp.message(StateFilter(OrderForm.waiting_phone))
@@ -565,14 +596,23 @@ async def process_phone(message: types.Message, state: FSMContext):
 async def process_comment(message: types.Message, state: FSMContext):
     data = await state.get_data()
     
+    # Получаем комментарий
     if message.text == "⏩ Пропустить":
         comment = "Без комментария"
     else:
         comment = message.text
     
+    # СОХРАНЯЕМ КОММЕНТАРИЙ
     await state.update_data(comment=comment)
     
+    # Обновляем локальные данные для отправки
+    data['comment'] = comment
+    
+    # Отладка в логах
+    logging.info(f"📝 Комментарий от {message.from_user.id}: {comment}")
+    
     try:
+        # Отправляем заказ диспетчеру (используем обновлённые данные)
         await send_order_to_dispatcher(
             order=data,
             user_id=message.from_user.id,
@@ -582,11 +622,11 @@ async def process_comment(message: types.Message, state: FSMContext):
         await message.answer(
             f"✅ **ЗАКАЗ УСПЕШНО ОТПРАВЛЕН!**\n\n"
             f"📝 **Детали заказа:**\n"
-            f"📍 {data['from_city']} → {data['to_city']}\n"
-            f"⏰ {data['time']}\n"
-            f"📞 {data['phone']}\n\n"
+            f"📍 {data.get('from_city', '?')} → {data.get('to_city', '?')}\n"
+            f"⏰ {data.get('time', '?')}\n"
+            f"📞 {data.get('phone', '?')}\n"
+            f"💬 Комментарий: {comment}\n\n"
             f"🚕 **Диспетчер свяжется с вами в ближайшее время!**\n\n"
-            f"⭐ Спасибо, что выбрали наш сервис!\n\n"
             f"Для нового заказа нажмите '🚕 Новый заказ'",
             reply_markup=get_main_keyboard()
         )
