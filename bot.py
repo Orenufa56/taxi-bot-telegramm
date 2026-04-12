@@ -8,11 +8,12 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 DISPATCHER_CHAT_ID = os.environ.get("DISPATCHER_CHAT_ID")
+GROUP_CHAT_ID = "-1003980266463"  # ID группы, где будет кнопка
 # =================================
 
 logging.basicConfig(level=logging.INFO)
@@ -27,9 +28,18 @@ CITIES = [
     "Салават", "Мелеуз", "Кумертау", "Мурапталово", "Октябрьское"
 ]
 
-# ========== КЛАВИАТУРЫ (только для лички) ==========
+# ========== КЛАВИАТУРЫ ==========
+
+def get_group_button():
+    """Кнопка для закрепления в группе"""
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚕 Заказать такси", url="https://t.me/UfaOren56bot")]
+        ]
+    )
 
 def get_main_keyboard():
+    """Главная клавиатура для лички"""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🚕 Новый заказ")],
@@ -80,6 +90,46 @@ class OrderForm(StatesGroup):
     waiting_comment = State()
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
+
+async def send_and_pin_button():
+    """Отправляет кнопку в группу и закрепляет её"""
+    try:
+        # Сначала удаляем старые закреплённые сообщения (если есть)
+        try:
+            pinned = await bot.get_chat(chat_id=GROUP_CHAT_ID)
+            if pinned.pinned_message:
+                await bot.unpin_chat_message(chat_id=GROUP_CHAT_ID)
+        except:
+            pass
+        
+        # Отправляем новое сообщение с кнопкой
+        msg = await bot.send_message(
+            chat_id=GROUP_CHAT_ID,
+            text="🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
+                 "📋 **Как оформить заказ:**\n\n"
+                 "1️⃣ Нажмите на кнопку ниже\n"
+                 "2️⃣ В личном чате с ботом нажмите /start\n"
+                 "3️⃣ Выберите '🚕 Новый заказ' и следуйте инструкциям\n\n"
+                 "💰 **Стоимость:**\n"
+                 "• Место: 2300 руб.\n"
+                 "• 4-местное авто: 9200 руб.\n"
+                 "• 6-местное авто: 13800 руб.\n\n"
+                 "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00, 22:00, 23:00\n\n"
+                 "📍 **Точки отправления:**\n"
+                 "• Оренбург: ТЦ Север\n"
+                 "• Уфа: Универмаг 'Уфа'\n\n"
+                 "📞 **Контакты диспетчера:** +7 9292 80 7979\n\n"
+                 "👇 **Нажмите на кнопку ниже, чтобы оформить заказ**",
+            reply_markup=get_group_button(),
+            parse_mode="Markdown"
+        )
+        # Закрепляем сообщение
+        await bot.pin_chat_message(chat_id=GROUP_CHAT_ID, message_id=msg.message_id)
+        logging.info("✅ Кнопка отправлена и закреплена в группе!")
+        return True
+    except Exception as e:
+        logging.error(f"❌ Ошибка при отправке/закреплении кнопки: {e}")
+        return False
 
 def format_time_with_dots(text: str) -> str:
     clean = re.sub(r'[\.\s]', '', text)
@@ -136,15 +186,11 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Если сообщение из группы - НЕТ КНОПОК, только текстовая ссылка
+    # Если сообщение из группы
     if chat_id != user_id:
         rules_text = (
             "🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
-            "📋 **Как оформить заказ:**\n\n"
-            "1️⃣ Перейдите в личный чат с ботом:\n"
-            "   👉 @UfaOren56bot\n\n"
-            "2️⃣ Напишите /start в личном чате\n\n"
-            "3️⃣ Выберите '🚕 Новый заказ' и следуйте инструкциям\n\n"
+            "📋 **Правила пользования:**\n\n"
             "💰 **Стоимость:**\n"
             "• Место: 2300 руб.\n"
             "• 4-местное авто: 9200 руб.\n"
@@ -154,7 +200,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
             "• Оренбург: ТЦ Север\n"
             "• Уфа: Универмаг 'Уфа'\n\n"
             "📞 **Контакты диспетчера:** +7 9292 80 7979\n\n"
-            "❓ **По всем вопросам обращайтесь к диспетчеру**"
+            "👇 **Нажмите на закреплённую кнопку выше, чтобы оформить заказ**"
         )
         await message.answer(rules_text, parse_mode="Markdown")
         return
@@ -561,11 +607,13 @@ async def main():
     print("=" * 60)
     print("🤖 TELEGRAM ТАКСИ БОТ")
     print("=" * 60)
-    print(f"📋 Доступные города: {', '.join(CITIES)}")
-    print(f"📨 Заказы отправляются диспетчеру: {DISPATCHER_CHAT_ID}")
+    print("📨 Заказы отправляются диспетчеру")
     print("=" * 60)
+    
+    # Отправляем и закрепляем кнопку в группе
+    await send_and_pin_button()
+    
     print("✅ Бот запущен и готов к работе!")
-    print("🛑 Для остановки нажмите Ctrl+C")
     print("=" * 60)
     
     await dp.start_polling(bot)
