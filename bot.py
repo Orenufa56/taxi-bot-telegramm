@@ -34,7 +34,7 @@ def get_group_button():
     """Кнопка для закрепления в группе"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🚕 Заказать такси", url="https://t.me/UfaOren56bot")]
+            [InlineKeyboardButton(text="🚕 Заказать такси", url="https://t.me/Taxi56OrenUfabot")]
         ]
     )
 
@@ -94,7 +94,7 @@ class OrderForm(StatesGroup):
 async def send_and_pin_button():
     """Отправляет кнопку в группу клиентов и закрепляет её"""
     try:
-        # Сначала удаляем старые закреплённые сообщения (если есть)
+        # Удаляем старые закреплённые сообщения
         try:
             chat_info = await bot.get_chat(chat_id=CLIENT_GROUP_ID)
             if chat_info.pinned_message:
@@ -104,7 +104,7 @@ async def send_and_pin_button():
         
         # Отправляем новое сообщение с кнопкой
         msg = await bot.send_message(
-            chat_id=CLIENT_GROUP_ID,  # ← ИСПРАВЛЕНО: теперь в группу клиентов
+            chat_id=CLIENT_GROUP_ID,
             text="🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
                  "📋 **Как оформить заказ:**\n\n"
                  "1️⃣ Нажмите на кнопку ниже\n"
@@ -126,13 +126,6 @@ async def send_and_pin_button():
         # Закрепляем сообщение
         await bot.pin_chat_message(chat_id=CLIENT_GROUP_ID, message_id=msg.message_id)
         logging.info("✅ Кнопка отправлена и закреплена в группе клиентов!")
-        return True
-    except Exception as e:
-        logging.error(f"❌ Ошибка при отправке/закреплении кнопки: {e}")
-        return False
-        # Закрепляем сообщение
-        await bot.pin_chat_message(chat_id=GROUP_CHAT_ID, message_id=msg.message_id)
-        logging.info("✅ Кнопка отправлена и закреплена в группе!")
         return True
     except Exception as e:
         logging.error(f"❌ Ошибка при отправке/закреплении кнопки: {e}")
@@ -193,9 +186,6 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # ВСЕГДА отвечаем (для отладки)
-    await message.answer(f"DEBUG: user_id={user_id}, chat_id={chat_id}")
-    
     # Если сообщение из группы
     if chat_id != user_id:
         rules_text = (
@@ -227,7 +217,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
 @dp.message(F.text == "🚕 Новый заказ")
 async def new_order(message: types.Message, state: FSMContext):
     if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @UfaOren56bot")
+        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
         return
     
     await state.clear()
@@ -245,7 +235,7 @@ async def new_order(message: types.Message, state: FSMContext):
 @dp.message(Command("cancel"))
 async def cancel_order(message: types.Message, state: FSMContext):
     if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @UfaOren56bot")
+        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
         return
     
     await state.clear()
@@ -259,7 +249,7 @@ async def cancel_order(message: types.Message, state: FSMContext):
 @dp.message(Command("help"))
 async def help_command(message: types.Message):
     if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @UfaOren56bot")
+        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
         return
     
     help_text = (
@@ -284,7 +274,7 @@ async def help_command(message: types.Message):
 @dp.message(F.text == "❓ Частые вопросы")
 async def show_faq(message: types.Message):
     if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @UfaOren56bot")
+        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
         return
     
     await message.answer(
