@@ -8,11 +8,11 @@ from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-DISPATCHER_CHAT_ID = "-1003980266463"
+DISPATCHER_CHAT_ID = os.environ.get("DISPATCHER_CHAT_ID")
 # =================================
 
 logging.basicConfig(level=logging.INFO)
@@ -136,20 +136,14 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Если сообщение из группы
+    # Если сообщение из группы - НЕТ КНОПОК, только текстовая ссылка
     if chat_id != user_id:
-        # Создаём кнопку-ссылку на бота
-        keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [InlineKeyboardButton(text="🚕 Перейти к боту", url="https://t.me/UfaOren56bot")]
-            ]
-        )
-        
         rules_text = (
             "🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
-            "📋 **Правила пользования:**\n\n"
-            "1️⃣ Для оформления заказа нажмите на кнопку ниже\n"
-            "2️⃣ В личном чате с ботом нажмите /start\n"
+            "📋 **Как оформить заказ:**\n\n"
+            "1️⃣ Перейдите в личный чат с ботом:\n"
+            "   👉 @UfaOren56bot\n\n"
+            "2️⃣ Напишите /start в личном чате\n\n"
             "3️⃣ Выберите '🚕 Новый заказ' и следуйте инструкциям\n\n"
             "💰 **Стоимость:**\n"
             "• Место: 2300 руб.\n"
@@ -162,7 +156,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
             "📞 **Контакты диспетчера:** +7 9292 80 7979\n\n"
             "❓ **По всем вопросам обращайтесь к диспетчеру**"
         )
-        await message.answer(rules_text, reply_markup=keyboard, parse_mode="Markdown")
+        await message.answer(rules_text, parse_mode="Markdown")
         return
     
     # Личное сообщение — показываем кнопки
