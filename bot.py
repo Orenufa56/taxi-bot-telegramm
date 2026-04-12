@@ -12,8 +12,8 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemo
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-DISPATCHER_CHAT_ID = os.environ.get("DISPATCHER_CHAT_ID")
-GROUP_CHAT_ID = "-1003980266463"  # ID группы, где будет кнопка
+DISPATCHER_CHAT_ID = "-1003980266463"  # Группа диспетчеров (куда приходят заказы)
+CLIENT_GROUP_ID = "-1003898088390"     # Группа приёма заявок (где клиенты пишут /start)
 # =================================
 
 logging.basicConfig(level=logging.INFO)
@@ -92,19 +92,19 @@ class OrderForm(StatesGroup):
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 async def send_and_pin_button():
-    """Отправляет кнопку в группу и закрепляет её"""
+    """Отправляет кнопку в группу клиентов и закрепляет её"""
     try:
         # Сначала удаляем старые закреплённые сообщения (если есть)
         try:
-            pinned = await bot.get_chat(chat_id=GROUP_CHAT_ID)
-            if pinned.pinned_message:
-                await bot.unpin_chat_message(chat_id=GROUP_CHAT_ID)
+            chat_info = await bot.get_chat(chat_id=CLIENT_GROUP_ID)
+            if chat_info.pinned_message:
+                await bot.unpin_chat_message(chat_id=CLIENT_GROUP_ID)
         except:
             pass
         
         # Отправляем новое сообщение с кнопкой
         msg = await bot.send_message(
-            chat_id=GROUP_CHAT_ID,
+            chat_id=CLIENT_GROUP_ID,  # ← ИСПРАВЛЕНО: теперь в группу клиентов
             text="🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
                  "📋 **Как оформить заказ:**\n\n"
                  "1️⃣ Нажмите на кнопку ниже\n"
@@ -123,6 +123,13 @@ async def send_and_pin_button():
             reply_markup=get_group_button(),
             parse_mode="Markdown"
         )
+        # Закрепляем сообщение
+        await bot.pin_chat_message(chat_id=CLIENT_GROUP_ID, message_id=msg.message_id)
+        logging.info("✅ Кнопка отправлена и закреплена в группе клиентов!")
+        return True
+    except Exception as e:
+        logging.error(f"❌ Ошибка при отправке/закреплении кнопки: {e}")
+        return False
         # Закрепляем сообщение
         await bot.pin_chat_message(chat_id=GROUP_CHAT_ID, message_id=msg.message_id)
         logging.info("✅ Кнопка отправлена и закреплена в группе!")
