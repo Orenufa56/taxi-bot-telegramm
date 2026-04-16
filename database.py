@@ -3,13 +3,17 @@ import logging
 from datetime import datetime
 
 DB_PATH = "taxi_bot.db"
+_db_initialized = False
 
 def init_db():
-    """Инициализация базы данных"""
+    """Инициализация базы данных (только один раз)"""
+    global _db_initialized
+    if _db_initialized:
+        return
+    
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -23,7 +27,6 @@ def init_db():
         )
     ''')
     
-    # Таблица заказов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             order_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -43,10 +46,10 @@ def init_db():
     
     conn.commit()
     conn.close()
+    _db_initialized = True
     logging.info("✅ База данных инициализирована")
 
 def add_user(user_id: int, username: str, first_name: str, last_name: str = None):
-    """Добавляет или обновляет пользователя"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -59,7 +62,6 @@ def add_user(user_id: int, username: str, first_name: str, last_name: str = None
     conn.close()
 
 def update_user_phone(user_id: int, phone: str):
-    """Обновляет телефон пользователя и увеличивает счётчик заказов"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -78,7 +80,6 @@ def update_user_phone(user_id: int, phone: str):
 
 def add_order(user_id: int, username: str, from_city: str, to_city: str, 
               order_date: str, order_time: str, phone: str, comment: str):
-    """Добавляет заказ в базу данных"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -92,7 +93,6 @@ def add_order(user_id: int, username: str, from_city: str, to_city: str,
     conn.close()
 
 def get_user_history(user_id: int, limit: int = 10):
-    """Получает историю заказов пользователя"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -109,7 +109,6 @@ def get_user_history(user_id: int, limit: int = 10):
     return orders
 
 def get_user_stats(user_id: int):
-    """Получает статистику пользователя"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
