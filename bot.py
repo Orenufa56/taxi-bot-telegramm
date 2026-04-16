@@ -28,6 +28,7 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+# Инициализация БД (только один раз)
 init_db()
 
 # ========== СПИСОК ГОРОДОВ ==========
@@ -65,7 +66,6 @@ def get_cities_inline_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_time_inline_keyboard():
-    """Клавиатура с выбором времени"""
     buttons = []
     row = []
     for time in AVAILABLE_TIMES:
@@ -79,32 +79,28 @@ def get_time_inline_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_calendar_keyboard(year: int = None, month: int = None):
-    """Генерация календаря для выбора даты"""
     if year is None or month is None:
         now = datetime.now()
         year = now.year
         month = now.month
     
-    # Названия месяцев
     months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
               "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
     
-    # Навигационные кнопки
-    nav_buttons = []
     prev_month = month - 1 if month > 1 else 12
     prev_year = year if month > 1 else year - 1
     next_month = month + 1 if month < 12 else 1
     next_year = year if month < 12 else year + 1
     
-    nav_buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"calendar_{prev_year}_{prev_month}"))
-    nav_buttons.append(InlineKeyboardButton(text=f"{months[month-1]} {year}", callback_data="ignore"))
-    nav_buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"calendar_{next_year}_{next_month}"))
+    nav_buttons = [
+        InlineKeyboardButton(text="◀️", callback_data=f"calendar_{prev_year}_{prev_month}"),
+        InlineKeyboardButton(text=f"{months[month-1]} {year}", callback_data="ignore"),
+        InlineKeyboardButton(text="▶️", callback_data=f"calendar_{next_year}_{next_month}")
+    ]
     
-    # Дни недели
     weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
     week_buttons = [InlineKeyboardButton(text=day, callback_data="ignore") for day in weekdays]
     
-    # Дни месяца
     month_days = monthcalendar(year, month)
     day_buttons = []
     for week in month_days:
@@ -117,12 +113,7 @@ def get_calendar_keyboard(year: int = None, month: int = None):
                 row.append(InlineKeyboardButton(text=str(day), callback_data=f"date_{date_str}"))
         day_buttons.append(row)
     
-    # Собираем клавиатуру
-    keyboard = [
-        nav_buttons,
-        week_buttons
-    ] + day_buttons
-    
+    keyboard = [nav_buttons, week_buttons] + day_buttons
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def get_faq_inline_keyboard():
@@ -216,19 +207,7 @@ def validate_phone(phone: str) -> bool:
     cleaned = re.sub(r'[\s\+\(\)\-]', '', phone)
     return cleaned.isdigit() and 10 <= len(cleaned) <= 12
 
-def validate_date(date_str: str) -> bool:
-    """Проверка формата даты ДД.ММ.ГГ"""
-    pattern = re.compile(r'^\d{2}\.\d{2}\.\d{2}$')
-    if not pattern.match(date_str):
-        return False
-    try:
-        datetime.strptime(date_str, "%d.%m.%y")
-        return True
-    except:
-        return False
-
 def is_date_past(date_str: str) -> bool:
-    """Проверка, не прошла ли дата"""
     try:
         order_date = datetime.strptime(date_str, "%d.%m.%y")
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -420,7 +399,7 @@ async def callback_back_to_phone(callback: types.CallbackQuery, state: FSMContex
 async def callback_calendar(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer()
     data = callback.data.split("_")
-    if data[1] != "ignore":
+    if len(data) == 3 and data[1] != "ignore":
         year = int(data[1])
         month = int(data[2])
         await callback.message.edit_reply_markup(reply_markup=get_calendar_keyboard(year, month))
@@ -493,9 +472,7 @@ async def callback_skip_comment(callback: types.CallbackQuery, state: FSMContext
             f"⭐ Спасибо, что выбрали наш сервис!",
             reply_markup=get_main_inline_keyboard()
         )
-        
         await state.clear()
-        
     except Exception as e:
         logging.error(f"Ошибка: {e}")
         await callback.message.edit_text(
@@ -536,131 +513,136 @@ async def callback_city_selection(callback: types.CallbackQuery, state: FSMConte
 # ========== РАЗВЁРНУТЫЕ FAQ ОТВЕТЫ ==========
 
 faq_answers = {
-    "faq_price": (
-        "💰 **Стоимость проезда**\n\n"
-        "Стоимость поездки рассчитывается индивидуально:\n\n"
-        "• **Одно место:** 2300 руб.\n"
-        "  (средний чемодан входит в стоимость)\n\n"
-        "• **4-местное авто:** 9200 руб.\n"
-        "  (комфортабельный автомобиль для компании)\n\n"
-        "• **6-местное авто:** 13800 руб.\n"
-        "  (микроавтобус для большой компании)\n\n"
-        "📞 **Точную стоимость уточняйте у диспетчера при оформлении заказа!**"
-    ),
+    "faq_price": "💰 **Стоимость проезда**\n\nСтоимость поездки рассчитывается индивидуально:\n\n• **Одно место:** 2300 руб.\n  (средний чемодан входит в стоимость)\n\n• **4-местное авто:** 9200 руб.\n  (комфортабельный автомобиль для компании)\n\n• **6-местное авто:** 13800 руб.\n  (микроавтобус для большой компании)\n\n📞 **Точную стоимость уточняйте у диспетчера при оформлении заказа!**",
     
-    "faq_time": (
-        "⏰ **Время выезда**\n\n"
-        "Доступное время отправления:\n\n"
-        "🕐  6:00, 9:00\n"
-        "🕐  12:00, 15:00\n"
-        "🕐  18:00\n"
-        "🕐  21:00 - 23:00\n\n"
-        "⚠️ **Важно:**\n"
-        "• Время в пути может меняться из-за погоды\n"
-        "• При заказе указывайте точное время\n"
-        "• Диспетчер подтвердит наличие мест"
-    ),
+    "faq_time": "⏰ **Время выезда**\n\nДоступное время отправления:\n\n🕐  6:00, 9:00\n🕐  12:00, 15:00\n🕐  18:00\n🕐  21:00 - 23:00\n\n⚠️ **Важно:**\n• Время в пути может меняться из-за погоды\n• При заказе указывайте точное время\n• Диспетчер подтвердит наличие мест",
     
-    "faq_travel": (
-        "🕐 **Время в пути**\n\n"
-        "Стандартное время в пути между городами:\n\n"
-        "• **Оренбург — Уфа:** 4-5 часов\n"
-        "• **Оренбург — Стерлитамак:** 3-4 часа\n"
-        "• **Уфа — Салават:** 2-3 часа\n\n"
-        "⚠️ **Факторы, влияющие на время:**\n"
-        "• Погодные условия (дождь, снег, гололёд)\n"
-        "• Загруженность трассы\n"
-        "• Время суток\n"
-        "• Дорожные работы\n\n"
-        "📞 Диспетчер предупредит вас о возможных задержках."
-    ),
+    "faq_travel": "🕐 **Время в пути**\n\nСтандартное время в пути между городами:\n\n• **Оренбург — Уфа:** 4-5 часов\n• **Оренбург — Стерлитамак:** 3-4 часа\n• **Уфа — Салават:** 2-3 часа\n\n⚠️ **Факторы, влияющие на время:**\n• Погодные условия\n• Загруженность трассы\n• Время суток\n• Дорожные работы\n\n📞 Диспетчер предупредит вас о возможных задержках.",
     
-    "faq_parcels": (
-        "📦 **Перевозка посылок**\n\n"
-        "Мы осуществляем доставку посылок между городами!\n\n"
-        "💰 **Стоимость:** от 500 руб.\n"
-        "• Цена формируется от размера и веса посылки\n"
-        "• Хрупкие грузы упаковываются отдельно\n\n"
-        "📋 **Как отправить посылку:**\n"
-        "1. Оформите заказ с пометкой 'Посылка'\n"
-        "2. Укажите вес и размеры\n"
-        "3. Сообщите, кто будет отправлять и получать\n\n"
-        "📞 Для точного расчета стоимости свяжитесь с диспетчером."
-    ),
+    "faq_parcels": "📦 **Перевозка посылок**\n\nМы осуществляем доставку посылок между городами!\n\n💰 **Стоимость:** от 500 руб.\n• Цена формируется от размера и веса посылки\n• Хрупкие грузы упаковываются отдельно\n\n📋 **Как отправить посылку:**\n1. Оформите заказ с пометкой 'Посылка'\n2. Укажите вес и размеры\n3. Сообщите, кто будет отправлять и получать\n\n📞 Для точного расчета стоимости свяжитесь с диспетчером.",
     
-    "faq_address": (
-        "🚕 **Забрать и довезти до адреса**\n\n"
-        "Мы можем забрать вас от любого адреса и довезти до нужного места!\n\n"
-        "💰 **Дополнительная плата:** от 300 руб.\n"
-        "• Зависит от удаленности от точки сбора\n"
-        "• Стоимость обсуждается с водителем\n\n"
-        "📍 **Стандартные точки сбора (бесплатно):**\n"
-        "• Оренбург: ТЦ Север\n"
-        "• Уфа: Универмаг 'Уфа'\n\n"
-        "⚠️ **При оформлении заказа укажите точный адрес в комментарии!**"
-    ),
+    "faq_address": "🚕 **Забрать и довезти до адреса**\n\nМы можем забрать вас от любого адреса и довезти до нужного места!\n\n💰 **Дополнительная плата:** от 300 руб.\n• Зависит от удаленности от точки сбора\n• Стоимость обсуждается с водителем\n\n📍 **Стандартные точки сбора (бесплатно):**\n• Оренбург: ТЦ Север\n• Уфа: Универмаг 'Уфа'\n\n⚠️ **При оформлении заказа укажите точный адрес в комментарии!**",
     
-    "faq_points": (
-        "📍 **Точки отправления и прибытия**\n\n"
-        "🏁 **Оренбург:**\n"
-        "ТЦ Север, пр. Дзержинского 23, вход 2\n\n"
-        "🏁 **Уфа:**\n"
-        "Универмаг 'Уфа', пр. Октября 31\n\n"
-        "🏁 **Другие города:**\n"
-        "• Стерлитамак — Автовокзал\n"
-        "• Салават — Автовокзал\n"
-        "• Мелеуз — Автовокзал\n"
-        "• Кумертау — КПМ\n\n"
-        "⚠️ **По другим адресам возможна подача с дополнительной платой.**"
-    ),
+    "faq_points": "📍 **Точки отправления и прибытия**\n\n🏁 **Оренбург:**\nТЦ Север, пр. Дзержинского 23, вход 2\n\n🏁 **Уфа:**\nУнивермаг 'Уфа', пр. Октября 31\n\n🏁 **Другие города:**\n• Стерлитамак — Автовокзал\n• Салават — Автовокзал\n• Мелеуз — Автовокзал\n• Кумертау — КПМ\n\n⚠️ **По другим адресам возможна подача с дополнительной платой.**",
     
-    "faq_animals": (
-        "🐕 **Перевозка животных**\n\n"
-        "✅ Да, мы перевозим животных!\n\n"
-        "📋 **Правила перевозки:**\n"
-        "• Обязательно наличие переноски (для кошек и мелких собак)\n"
-        "• Для крупных собак нужен намордник и поводок\n"
-        "• Животное не должно мешать водителю\n"
-        "• Возможна дополнительная плата за уборку салона\n\n"
-        "💰 **Стоимость:** уточняйте у диспетчера\n\n"
-        "⚠️ **Важно:** Укажите в комментарии к заказу, что вы будете с животным, а также породу и размер!"
-    ),
+    "faq_animals": "🐕 **Перевозка животных**\n\n✅ Да, мы перевозим животных!\n\n📋 **Правила перевозки:**\n• Обязательно наличие переноски (для кошек и мелких собак)\n• Для крупных собак нужен намордник и поводок\n• Животное не должно мешать водителю\n• Возможна дополнительная плата за уборку салона\n\n💰 **Стоимость:** уточняйте у диспетчера\n\n⚠️ **Важно:** Укажите в комментарии к заказу, что вы будете с животным, а также породу и размер!",
     
-    "faq_luggage": (
-        "🧳 **Перевозка багажа**\n\n"
-        "📋 **Правила перевозки багажа:**\n\n"
-        "• Средний чемодан уже входит в стоимость места (2300 руб.)\n"
-        "• Багаж перевозится бесплатно в пределах разумного\n"
-        "• Если у вас много багажа, укажите это в комментарии\n"
-        "• При необходимости можно заказать автомобиль с увеличенным багажником\n\n"
-        "📦 **Крупногабаритный багаж:**\n"
-        "• Велосипеды, лыжи, сноуборды\n"
-        "• Стоимость обсуждается отдельно\n\n"
-        "💡 **Совет:** Для крупногабаритного багажа уточните детали у диспетчера."
-    ),
+    "faq_luggage": "🧳 **Перевозка багажа**\n\n📋 **Правила перевозки багажа:**\n\n• Средний чемодан уже входит в стоимость места (2300 руб.)\n• Багаж перевозится бесплатно в пределах разумного\n• Если у вас много багажа, укажите это в комментарии\n• При необходимости можно заказать автомобиль с увеличенным багажником\n\n📦 **Крупногабаритный багаж:**\n• Велосипеды, лыжи, сноуборды\n• Стоимость обсуждается отдельно\n\n💡 **Совет:** Для крупногабаритного багажа уточните детали у диспетчера.",
     
-    "faq_smoking": (
-        "🚭 **Курение в автомобиле**\n\n"
-        "❌ **Курение в салоне автомобиля строго запрещено!**\n\n"
-        "💰 **Штраф за курение:** 5000 рублей\n"
-        "(на профессиональную химчистку салона)\n\n"
-        "✅ **Что можно делать:**\n"
-        "• Курить на остановках (попросите водителя)\n\n"
-        "📞 Если вам нужно покурить, попросите водителя сделать остановку.\n\n"
-        "✅ Благодарим за понимание и уважение к нашему транспорту!"
-    ),
+    "faq_smoking": "🚭 **Курение в автомобиле**\n\n❌ **Курение в салоне автомобиля строго запрещено!**\n\n💰 **Штраф за курение:** 5000 рублей\n(на профессиональную химчистку салона)\n\n✅ **Что можно делать:**\n• Курить на остановках (попросите водителя)\n\n📞 Если вам нужно покурить, попросите водителя сделать остановку.\n\n✅ Благодарим за понимание и уважение к нашему транспорту!",
     
-    "faq_contacts": (
-        "📞 **Контакты для связи**\n\n"
-        "📱 **По всем вопросам обращайтесь:**\n\n"
-        "• Диспетчерская служба: +79058907979\n"
-        "• Телефон диспетчера: +7 9292 80 7979\n\n"
-        "🕐 **Время работы диспетчерской:**\n"
-        "• Ежедневно: Круглосуточно\n"
-        "• Без выходных\n\n"
-        "📧 **Email для предложений:** orenufa56@gmail.com\n\n"
-        "💬 **Мы в соцсетях:**\n"
-        "• ВКонтакте: vk.com/ufaoren\n\n"
-        "📞 **Срочные вопросы звоните!**"
-    )
+    "faq_contacts": "📞 **Контакты для связи**\n\n📱 **По всем вопросам обращайтесь:**\n\n• Диспетчерская служба: +79058907979\n• Телефон диспетчера: +7 9292 80 7979\n\n🕐 **Время работы диспетчерской:**\n• Ежедневно: Круглосуточно\n• Без выходных\n\n📧 **Email для предложений:** orenufa56@gmail.com\n\n💬 **Мы в соцсетях:**\n• ВКонтакте: vk.com/ufaoren\n\n📞 **Срочные вопросы звоните!**"
 }
+
+@dp.callback_query(F.data.startswith("faq_"))
+async def callback_faq_answer(callback: types.CallbackQuery):
+    await callback.answer()
+    answer = faq_answers.get(callback.data, "Информация временно недоступна")
+    await callback.message.edit_text(
+        answer,
+        reply_markup=get_faq_inline_keyboard()
+    )
+
+# ========== ОСНОВНОЙ ХЭНДЛЕР ЗАКАЗА (FSM) ==========
+
+@dp.message(StateFilter(OrderForm.waiting_name))
+async def process_name(message: types.Message, state: FSMContext):
+    if len(message.text) > 100:
+        await message.answer("❌ Имя слишком длинное! Введите имя короче:")
+        return
+    
+    await state.update_data(username=message.text)
+    await state.set_state(OrderForm.waiting_from_city)
+    
+    await message.answer(
+        f"👋 **Приятно познакомиться, {message.text}!**\n\n"
+        f"📍 **Выберите город отправления:**",
+        reply_markup=get_cities_inline_keyboard()
+    )
+
+@dp.message(StateFilter(OrderForm.waiting_phone))
+async def process_phone(message: types.Message, state: FSMContext):
+    if not validate_phone(message.text):
+        await message.answer(
+            "❌ **Неверный номер телефона!**\n\n"
+            "📝 **Примеры:** 89001234567, +7-900-123-45-67\n\n"
+            "Попробуйте еще раз:",
+            reply_markup=get_back_inline_keyboard()
+        )
+        return
+    
+    await state.update_data(phone=message.text)
+    await state.set_state(OrderForm.waiting_comment)
+    
+    await message.answer(
+        "💬 **Дополнительные пожелания?**\n\n"
+        "Напишите комментарий или нажмите кнопку 'Пропустить'",
+        reply_markup=get_skip_inline_keyboard()
+    )
+
+@dp.message(StateFilter(OrderForm.waiting_comment))
+async def process_comment(message: types.Message, state: FSMContext):
+    data = await state.get_data()
+    comment = message.text
+    
+    await state.update_data(comment=comment)
+    data['comment'] = comment
+    
+    add_order(
+        user_id=message.from_user.id,
+        username=data.get('username', message.from_user.first_name),
+        from_city=data.get('from_city', ''),
+        to_city=data.get('to_city', ''),
+        order_date=data.get('date', ''),
+        order_time=data.get('time', ''),
+        phone=data.get('phone', ''),
+        comment=comment
+    )
+    
+    update_user_phone(message.from_user.id, data.get('phone', ''))
+    
+    try:
+        await send_order_to_dispatcher(
+            order=data,
+            user_id=message.from_user.id,
+            username=message.from_user.username
+        )
+        
+        await message.answer(
+            f"✅ **ЗАКАЗ УСПЕШНО ОТПРАВЛЕН!**\n\n"
+            f"📝 **Детали заказа:**\n"
+            f"📍 {data.get('from_city', '?')} → {data.get('to_city', '?')}\n"
+            f"📅 {data.get('date', '?')}\n"
+            f"⏰ {data.get('time', '?')}\n"
+            f"📞 {data.get('phone', '?')}\n"
+            f"💬 Комментарий: {comment}\n\n"
+            f"🚕 **Диспетчер свяжется с вами в ближайшее время!**\n\n"
+            f"⭐ Спасибо, что выбрали наш сервис!",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+    except Exception as e:
+        logging.error(f"Ошибка: {e}")
+        await message.answer(
+            "❌ **Ошибка при отправке заказа**\n\nПожалуйста, попробуйте позже.",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+
+# ========== ЗАПУСК БОТА ==========
+async def main():
+    print("=" * 60)
+    print("🤖 TELEGRAM ТАКСИ БОТ")
+    print("=" * 60)
+    print("📨 Заказы отправляются диспетчеру")
+    print("=" * 60)
+    
+    await send_and_pin_button()
+    
+    print("✅ Бот запущен и готов к работе!")
+    print("=" * 60)
+    
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
