@@ -3,17 +3,20 @@ import logging
 from datetime import datetime
 
 DB_PATH = "taxi_bot.db"
-_db_initialized = False
+
+# Флаг для отслеживания инициализации (ГЛОБАЛЬНЫЙ)
+_DB_INITIALIZED = False
 
 def init_db():
     """Инициализация базы данных (только один раз)"""
-    global _db_initialized
-    if _db_initialized:
+    global _DB_INITIALIZED
+    if _DB_INITIALIZED:
         return
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
+    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -27,6 +30,7 @@ def init_db():
         )
     ''')
     
+    # Таблица заказов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             order_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -46,8 +50,8 @@ def init_db():
     
     conn.commit()
     conn.close()
-    _db_initialized = True
-    logging.info("✅ База данных инициализирована")
+    _DB_INITIALIZED = True
+    logging.info("✅ База данных инициализирована (один раз)")
 
 def add_user(user_id: int, username: str, first_name: str, last_name: str = None):
     conn = sqlite3.connect(DB_PATH)
