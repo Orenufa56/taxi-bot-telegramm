@@ -28,7 +28,7 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
-# Инициализация БД (только один раз)
+# Инициализация БД (один раз)
 init_db()
 
 # ========== СПИСОК ГОРОДОВ ==========
@@ -43,18 +43,20 @@ AVAILABLE_TIMES = ["6:00", "9:00", "12:00", "15:00", "18:00", "21:00-23:00"]
 # ========== ИНЛАЙН-КЛАВИАТУРЫ ==========
 
 def get_main_inline_keyboard():
+    """Главная клавиатура"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚕 Новый заказ", callback_data="new_order")],
             [InlineKeyboardButton(text="❓ Частые вопросы", callback_data="faq"),
              InlineKeyboardButton(text="📜 История", callback_data="history")],
-            [InlineKeyboardButton(text="📞 Позвонить диспетчеру", url="tel:+79292807979"),
+            [InlineKeyboardButton(text="📞 Контакты", callback_data="faq_contacts"),
              InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
             [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")]
         ]
     )
 
 def get_cities_inline_keyboard():
+    """Клавиатура выбора города"""
     buttons = []
     row = []
     for i, city in enumerate(CITIES):
@@ -66,6 +68,7 @@ def get_cities_inline_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_time_inline_keyboard():
+    """Клавиатура выбора времени"""
     buttons = []
     row = []
     for time in AVAILABLE_TIMES:
@@ -79,6 +82,7 @@ def get_time_inline_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 def get_calendar_keyboard(year: int = None, month: int = None):
+    """Календарь для выбора даты"""
     if year is None or month is None:
         now = datetime.now()
         year = now.year
@@ -117,6 +121,7 @@ def get_calendar_keyboard(year: int = None, month: int = None):
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 def get_faq_inline_keyboard():
+    """Клавиатура FAQ"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="💰 Стоимость проезда", callback_data="faq_price")],
@@ -134,6 +139,7 @@ def get_faq_inline_keyboard():
     )
 
 def get_skip_inline_keyboard():
+    """Клавиатура пропуска комментария"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="⏩ Пропустить", callback_data="skip_comment")],
@@ -142,6 +148,7 @@ def get_skip_inline_keyboard():
     )
 
 def get_back_inline_keyboard():
+    """Клавиатура с кнопкой назад"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
@@ -149,6 +156,7 @@ def get_back_inline_keyboard():
     )
 
 def get_group_button():
+    """Кнопка для закрепления в группе"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚕 Заказать такси", url="https://t.me/Taxi56OrenUfabot")]
@@ -168,6 +176,7 @@ class OrderForm(StatesGroup):
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 async def send_and_pin_button():
+    """Отправляет и закрепляет кнопку в группе"""
     try:
         try:
             chat_info = await bot.get_chat(chat_id=CLIENT_GROUP_ID)
@@ -204,10 +213,12 @@ async def send_and_pin_button():
         return False
 
 def validate_phone(phone: str) -> bool:
+    """Проверка номера телефона"""
     cleaned = re.sub(r'[\s\+\(\)\-]', '', phone)
     return cleaned.isdigit() and 10 <= len(cleaned) <= 12
 
 def is_date_past(date_str: str) -> bool:
+    """Проверка, не прошла ли дата"""
     try:
         order_date = datetime.strptime(date_str, "%d.%m.%y")
         today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -216,6 +227,7 @@ def is_date_past(date_str: str) -> bool:
         return True
 
 async def send_order_to_dispatcher(order: dict, user_id: int, username: str = None):
+    """Отправляет заказ диспетчеру"""
     order_text = (
         f"🚕 **НОВЫЙ ЗАКАЗ!**\n\n"
         f"👤 Клиент: {order.get('username', 'Не указано')}\n"
@@ -248,6 +260,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         last_name=message.from_user.last_name
     )
     
+    # Если сообщение из группы
     if chat_id != user_id:
         rules_text = (
             "🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
@@ -266,6 +279,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer(rules_text, parse_mode="Markdown")
         return
     
+    # Личное сообщение
     await message.answer(
         f"🚕 **Добро пожаловать, {message.from_user.first_name}!**\n\n"
         "Я помогу вам быстро и комфортно добраться между городами.\n\n"
@@ -340,7 +354,7 @@ async def callback_help(callback: types.CallbackQuery):
         "• 🚕 Новый заказ - начать оформление поездки\n"
         "• ❓ Частые вопросы - ответы на популярные вопросы\n"
         "• 📜 История - посмотреть историю поездок\n"
-        "• 📞 Позвонить диспетчеру - связаться с диспетчером\n"
+        "• 📞 Контакты - контакты диспетчера\n"
         "• ❌ Отмена - отменить текущий заказ\n\n"
         "📝 **Как оформить заказ:**\n"
         "1️⃣ Нажмите '🚕 Новый заказ'\n"
@@ -396,7 +410,7 @@ async def callback_back_to_phone(callback: types.CallbackQuery, state: FSMContex
     )
 
 @dp.callback_query(F.data.startswith("calendar_"))
-async def callback_calendar(callback: types.CallbackQuery, state: FSMContext):
+async def callback_calendar(callback: types.CallbackQuery):
     await callback.answer()
     data = callback.data.split("_")
     if len(data) == 3 and data[1] != "ignore":
