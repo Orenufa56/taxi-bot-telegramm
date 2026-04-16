@@ -2,18 +2,24 @@ import os
 import re
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
+from calendar import monthcalendar
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.fsm.storage.memory import MemoryStorage
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+    ReplyKeyboardMarkup, KeyboardButton, ReplyKeyboardRemove,
+    InlineKeyboardMarkup, InlineKeyboardButton
+)
+
+from database import init_db, add_user, update_user_phone, add_order, get_user_history, get_user_stats
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-DISPATCHER_CHAT_ID = "-1003980266463"  # Группа диспетчеров (куда приходят заказы)
-CLIENT_GROUP_ID = "-1003898088390"     # Группа приёма заявок (где клиенты пишут /start)
+DISPATCHER_CHAT_ID = "-1003980266463"
+CLIENT_GROUP_ID = "-1003898088390"
 # =================================
 
 logging.basicConfig(level=logging.INFO)
@@ -22,62 +28,140 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 
+init_db()
+
 # ========== СПИСОК ГОРОДОВ ==========
 CITIES = [
     "Оренбург", "Уфа", "Толбазы", "Стерлитамак",
     "Салават", "Мелеуз", "Кумертау", "Мурапталово", "Октябрьское"
 ]
 
-# ========== КЛАВИАТУРЫ ==========
+# ========== ДОСТУПНОЕ ВРЕМЯ ==========
+AVAILABLE_TIMES = ["6:00", "9:00", "12:00", "15:00", "18:00", "21:00-23:00"]
+
+# ========== ИНЛАЙН-КЛАВИАТУРЫ ==========
+
+def get_main_inline_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🚕 Новый заказ", callback_data="new_order")],
+            [InlineKeyboardButton(text="❓ Частые вопросы", callback_data="faq"),
+             InlineKeyboardButton(text="📜 История", callback_data="history")],
+            [InlineKeyboardButton(text="📞 Позвонить диспетчеру", url="tel:+79292807979"),
+             InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+            [InlineKeyboardButton(text="ℹ️ Помощь", callback_data="help")]
+        ]
+    )
+
+def get_cities_inline_keyboard():
+    buttons = []
+    row = []
+    for i, city in enumerate(CITIES):
+        row.append(InlineKeyboardButton(text=city, callback_data=f"city_{city}"))
+        if len(row) == 3 or i == len(CITIES) - 1:
+            buttons.append(row)
+            row = []
+    buttons.append([InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_time_inline_keyboard():
+    """Клавиатура с выбором времени"""
+    buttons = []
+    row = []
+    for time in AVAILABLE_TIMES:
+        row.append(InlineKeyboardButton(text=time, callback_data=f"time_{time}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_cities")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def get_calendar_keyboard(year: int = None, month: int = None):
+    """Генерация календаря для выбора даты"""
+    if year is None or month is None:
+        now = datetime.now()
+        year = now.year
+        month = now.month
+    
+    # Названия месяцев
+    months = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+              "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"]
+    
+    # Навигационные кнопки
+    nav_buttons = []
+    prev_month = month - 1 if month > 1 else 12
+    prev_year = year if month > 1 else year - 1
+    next_month = month + 1 if month < 12 else 1
+    next_year = year if month < 12 else year + 1
+    
+    nav_buttons.append(InlineKeyboardButton(text="◀️", callback_data=f"calendar_{prev_year}_{prev_month}"))
+    nav_buttons.append(InlineKeyboardButton(text=f"{months[month-1]} {year}", callback_data="ignore"))
+    nav_buttons.append(InlineKeyboardButton(text="▶️", callback_data=f"calendar_{next_year}_{next_month}"))
+    
+    # Дни недели
+    weekdays = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"]
+    week_buttons = [InlineKeyboardButton(text=day, callback_data="ignore") for day in weekdays]
+    
+    # Дни месяца
+    month_days = monthcalendar(year, month)
+    day_buttons = []
+    for week in month_days:
+        row = []
+        for day in week:
+            if day == 0:
+                row.append(InlineKeyboardButton(text=" ", callback_data="ignore"))
+            else:
+                date_str = f"{day:02d}.{month:02d}.{str(year)[-2:]}"
+                row.append(InlineKeyboardButton(text=str(day), callback_data=f"date_{date_str}"))
+        day_buttons.append(row)
+    
+    # Собираем клавиатуру
+    keyboard = [
+        nav_buttons,
+        week_buttons
+    ] + day_buttons
+    
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_faq_inline_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="💰 Стоимость проезда", callback_data="faq_price")],
+            [InlineKeyboardButton(text="⏰ Время выезда", callback_data="faq_time"),
+             InlineKeyboardButton(text="🕐 Время в пути", callback_data="faq_travel")],
+            [InlineKeyboardButton(text="📦 Посылки", callback_data="faq_parcels"),
+             InlineKeyboardButton(text="🚕 Забрать до адреса", callback_data="faq_address")],
+            [InlineKeyboardButton(text="📍 Точки отправления", callback_data="faq_points")],
+            [InlineKeyboardButton(text="🐕 Животные", callback_data="faq_animals"),
+             InlineKeyboardButton(text="🧳 Багаж", callback_data="faq_luggage")],
+            [InlineKeyboardButton(text="🚭 Курить в машине", callback_data="faq_smoking"),
+             InlineKeyboardButton(text="📞 Контакты", callback_data="faq_contacts")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
+        ]
+    )
+
+def get_skip_inline_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⏩ Пропустить", callback_data="skip_comment")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_phone")]
+        ]
+    )
+
+def get_back_inline_keyboard():
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_main")]
+        ]
+    )
 
 def get_group_button():
-    """Кнопка для закрепления в группе"""
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🚕 Заказать такси", url="https://t.me/Taxi56OrenUfabot")]
         ]
-    )
-
-def get_main_keyboard():
-    """Главная клавиатура для лички"""
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="🚕 Новый заказ")],
-            [KeyboardButton(text="❓ Частые вопросы"), KeyboardButton(text="❌ Отмена")],
-            [KeyboardButton(text="ℹ️ Помощь")]
-        ],
-        resize_keyboard=True
-    )
-
-def get_cities_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="Оренбург"), KeyboardButton(text="Уфа"), KeyboardButton(text="Толбазы")],
-            [KeyboardButton(text="Стерлитамак"), KeyboardButton(text="Салават"), KeyboardButton(text="Мелеуз")],
-            [KeyboardButton(text="Кумертау"), KeyboardButton(text="Мурапталово"), KeyboardButton(text="Октябрьское")]
-        ],
-        resize_keyboard=True
-    )
-
-def get_skip_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="⏩ Пропустить")]],
-        resize_keyboard=True
-    )
-
-def get_faq_keyboard():
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="💰 Стоимость проезда")],
-            [KeyboardButton(text="⏰ Время выезда"), KeyboardButton(text="🕐 Время в пути")],
-            [KeyboardButton(text="📦 Посылки"), KeyboardButton(text="🚕 Забрать до адреса")],
-            [KeyboardButton(text="📍 Точки отправления")],
-            [KeyboardButton(text="🐕 Животные"), KeyboardButton(text="🧳 Багаж")],
-            [KeyboardButton(text="🚭 Курить в машине")],
-            [KeyboardButton(text="📞 Контакты")],
-            [KeyboardButton(text="🔙 Назад")]
-        ],
-        resize_keyboard=True
     )
 
 # ========== СОСТОЯНИЯ FSM ==========
@@ -85,6 +169,7 @@ class OrderForm(StatesGroup):
     waiting_name = State()
     waiting_from_city = State()
     waiting_to_city = State()
+    waiting_date = State()
     waiting_time = State()
     waiting_phone = State()
     waiting_comment = State()
@@ -92,9 +177,7 @@ class OrderForm(StatesGroup):
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 async def send_and_pin_button():
-    """Отправляет кнопку в группу клиентов и закрепляет её"""
     try:
-        # Удаляем старые закреплённые сообщения
         try:
             chat_info = await bot.get_chat(chat_id=CLIENT_GROUP_ID)
             if chat_info.pinned_message:
@@ -102,7 +185,6 @@ async def send_and_pin_button():
         except:
             pass
         
-        # Отправляем новое сообщение с кнопкой
         msg = await bot.send_message(
             chat_id=CLIENT_GROUP_ID,
             text="🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
@@ -114,7 +196,7 @@ async def send_and_pin_button():
                  "• Место: 2300 руб.\n"
                  "• 4-местное авто: 9200 руб.\n"
                  "• 6-местное авто: 13800 руб.\n\n"
-                 "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00, 22:00, 23:00\n\n"
+                 "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00-23:00\n\n"
                  "📍 **Точки отправления:**\n"
                  "• Оренбург: ТЦ Север\n"
                  "• Уфа: Универмаг 'Уфа'\n\n"
@@ -123,43 +205,36 @@ async def send_and_pin_button():
             reply_markup=get_group_button(),
             parse_mode="Markdown"
         )
-        # Закрепляем сообщение
         await bot.pin_chat_message(chat_id=CLIENT_GROUP_ID, message_id=msg.message_id)
         logging.info("✅ Кнопка отправлена и закреплена в группе клиентов!")
         return True
     except Exception as e:
-        logging.error(f"❌ Ошибка при отправке/закреплении кнопки: {e}")
+        logging.error(f"❌ Ошибка: {e}")
         return False
-
-def format_time_with_dots(text: str) -> str:
-    clean = re.sub(r'[\.\s]', '', text)
-    if len(clean) >= 12:
-        return f"{clean[0:2]}.{clean[2:4]}.{clean[4:6]} в {clean[6:8]}:{clean[8:10]}"
-    elif len(clean) >= 10:
-        return f"{clean[0:2]}.{clean[2:4]}.{clean[4:6]} в {clean[6:8]}:{clean[8:10]}"
-    elif len(clean) >= 8:
-        return f"{clean[0:2]}.{clean[2:4]}.{clean[4:6]} в {clean[6:8]}:"
-    elif len(clean) >= 6:
-        return f"{clean[0:2]}.{clean[2:4]}.{clean[4:6]} в "
-    elif len(clean) >= 4:
-        return f"{clean[0:2]}.{clean[2:4]}."
-    elif len(clean) >= 2:
-        return f"{clean[0:2]}."
-    return text
 
 def validate_phone(phone: str) -> bool:
     cleaned = re.sub(r'[\s\+\(\)\-]', '', phone)
     return cleaned.isdigit() and 10 <= len(cleaned) <= 12
 
-def validate_time(time_str: str) -> bool:
-    pattern = re.compile(r'^\d{2}\.\d{2}\.\d{2} в \d{2}:\d{2}$')
-    if not pattern.match(time_str):
+def validate_date(date_str: str) -> bool:
+    """Проверка формата даты ДД.ММ.ГГ"""
+    pattern = re.compile(r'^\d{2}\.\d{2}\.\d{2}$')
+    if not pattern.match(date_str):
         return False
     try:
-        datetime.strptime(time_str, "%d.%m.%y в %H:%M")
+        datetime.strptime(date_str, "%d.%m.%y")
         return True
     except:
         return False
+
+def is_date_past(date_str: str) -> bool:
+    """Проверка, не прошла ли дата"""
+    try:
+        order_date = datetime.strptime(date_str, "%d.%m.%y")
+        today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        return order_date < today
+    except:
+        return True
 
 async def send_order_to_dispatcher(order: dict, user_id: int, username: str = None):
     order_text = (
@@ -167,6 +242,7 @@ async def send_order_to_dispatcher(order: dict, user_id: int, username: str = No
         f"👤 Клиент: {order.get('username', 'Не указано')}\n"
         f"📍 Откуда: {order.get('from_city', 'Не указано')}\n"
         f"🏁 Куда: {order.get('to_city', 'Не указано')}\n"
+        f"📅 Дата: {order.get('date', 'Не указано')}\n"
         f"⏰ Время: {order.get('time', 'Не указано')}\n"
         f"📞 Телефон: {order.get('phone', 'Не указано')}\n"
         f"💬 Комментарий: {order.get('comment', 'Без комментария')}\n\n"
@@ -178,7 +254,7 @@ async def send_order_to_dispatcher(order: dict, user_id: int, username: str = No
         parse_mode="Markdown"
     )
 
-# ========== ОБРАБОТЧИКИ ==========
+# ========== ОБРАБОТЧИКИ КОМАНД ==========
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message, state: FSMContext):
@@ -186,7 +262,13 @@ async def cmd_start(message: types.Message, state: FSMContext):
     user_id = message.from_user.id
     chat_id = message.chat.id
     
-    # Если сообщение из группы
+    add_user(
+        user_id=user_id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        last_name=message.from_user.last_name
+    )
+    
     if chat_id != user_id:
         rules_text = (
             "🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
@@ -195,7 +277,7 @@ async def cmd_start(message: types.Message, state: FSMContext):
             "• Место: 2300 руб.\n"
             "• 4-местное авто: 9200 руб.\n"
             "• 6-местное авто: 13800 руб.\n\n"
-            "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00, 22:00, 23:00\n\n"
+            "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00-23:00\n\n"
             "📍 **Точки отправления:**\n"
             "• Оренбург: ТЦ Север\n"
             "• Уфа: Универмаг 'Уфа'\n\n"
@@ -205,89 +287,256 @@ async def cmd_start(message: types.Message, state: FSMContext):
         await message.answer(rules_text, parse_mode="Markdown")
         return
     
-    # Личное сообщение — показываем кнопки
-    user_name = message.from_user.first_name
     await message.answer(
-        f"🚕 **Добро пожаловать, {user_name}!**\n\n"
+        f"🚕 **Добро пожаловать, {message.from_user.first_name}!**\n\n"
         "Я помогу вам быстро и комфортно добраться между городами.\n\n"
-        "👇 **Нажмите на кнопку ниже, чтобы начать**",
-        reply_markup=get_main_keyboard()
+        "👇 **Выберите действие:**",
+        reply_markup=get_main_inline_keyboard()
     )
 
-@dp.message(F.text == "🚕 Новый заказ")
-async def new_order(message: types.Message, state: FSMContext):
-    if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
-        return
-    
+# ========== CALLBACK-ОБРАБОТЧИКИ ==========
+
+@dp.callback_query(F.data == "new_order")
+async def callback_new_order(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
     await state.clear()
     await state.set_state(OrderForm.waiting_name)
-    await state.update_data(username=message.from_user.first_name)
+    await state.update_data(username=callback.from_user.first_name)
     
-    await message.answer(
+    await callback.message.edit_text(
         "🚕 **Начинаем оформление заказа!**\n\n"
         "👤 **Как к вам обращаться?**\n"
         "(Напишите ваше имя)",
-        reply_markup=ReplyKeyboardRemove()
+        reply_markup=get_back_inline_keyboard()
     )
 
-@dp.message(F.text == "❌ Отмена")
-@dp.message(Command("cancel"))
-async def cancel_order(message: types.Message, state: FSMContext):
-    if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
+@dp.callback_query(F.data == "history")
+async def callback_history(callback: types.CallbackQuery):
+    await callback.answer()
+    orders = get_user_history(callback.from_user.id)
+    stats = get_user_stats(callback.from_user.id)
+    
+    if not orders:
+        await callback.message.edit_text(
+            "📜 **История поездок**\n\n"
+            "У вас пока нет ни одной поездки.\n\n"
+            "Нажмите '🚕 Новый заказ', чтобы сделать первый заказ!",
+            reply_markup=get_back_inline_keyboard()
+        )
         return
     
-    await state.clear()
-    await message.answer(
-        "❌ **Заказ отменен**\n\n"
-        "Если захотите сделать новый заказ, нажмите '🚕 Новый заказ'",
-        reply_markup=get_main_keyboard()
+    history_text = "📜 **История ваших поездок**\n\n"
+    for i, order in enumerate(orders, 1):
+        from_city, to_city, order_date, order_time, created_at, status = order
+        history_text += (
+            f"{i}. 📍 {from_city} → {to_city}\n"
+            f"   📅 {order_date} в {order_time}\n"
+            f"   📅 Заказ: {created_at.split()[0]}\n"
+            f"   🏷 Статус: {status}\n\n"
+        )
+    
+    if stats:
+        total_orders, phone, _, _ = stats
+        history_text += f"📊 **Всего поездок:** {total_orders}\n"
+        if phone:
+            history_text += f"📞 **Ваш телефон:** {phone}"
+    
+    await callback.message.edit_text(history_text, reply_markup=get_back_inline_keyboard())
+
+@dp.callback_query(F.data == "faq")
+async def callback_faq(callback: types.CallbackQuery):
+    await callback.answer()
+    await callback.message.edit_text(
+        "❓ **Часто задаваемые вопросы**\n\n"
+        "Выберите интересующий вас вопрос:",
+        reply_markup=get_faq_inline_keyboard()
     )
 
-@dp.message(F.text == "ℹ️ Помощь")
-@dp.message(Command("help"))
-async def help_command(message: types.Message):
-    if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
-        return
-    
+@dp.callback_query(F.data == "help")
+async def callback_help(callback: types.CallbackQuery):
+    await callback.answer()
     help_text = (
         "ℹ️ **Помощь по использованию бота**\n\n"
         "📌 **Основные команды:**\n"
         "• 🚕 Новый заказ - начать оформление поездки\n"
         "• ❓ Частые вопросы - ответы на популярные вопросы\n"
+        "• 📜 История - посмотреть историю поездок\n"
+        "• 📞 Позвонить диспетчеру - связаться с диспетчером\n"
         "• ❌ Отмена - отменить текущий заказ\n\n"
         "📝 **Как оформить заказ:**\n"
         "1️⃣ Нажмите '🚕 Новый заказ'\n"
         "2️⃣ Введите ваше имя\n"
         "3️⃣ Выберите город отправления\n"
         "4️⃣ Выберите город назначения\n"
-        "5️⃣ Укажите дату и время (формат: 04.04.26 в 15:00)\n"
-        "6️⃣ Укажите номер телефона\n"
-        "7️⃣ Добавьте комментарий или нажмите 'Пропустить'\n\n"
+        "5️⃣ Выберите дату в календаре\n"
+        "6️⃣ Выберите время\n"
+        "7️⃣ Укажите номер телефона\n"
+        "8️⃣ Добавьте комментарий\n\n"
         "💰 **Оплата:** наличными водителю или переводом на карту\n\n"
         "📞 **Контакты поддержки:** +79292807979"
     )
-    await message.answer(help_text, reply_markup=get_main_keyboard())
+    await callback.message.edit_text(help_text, reply_markup=get_back_inline_keyboard())
 
-@dp.message(F.text == "❓ Частые вопросы")
-async def show_faq(message: types.Message):
-    if message.chat.id != message.from_user.id:
-        await message.answer("Пожалуйста, напишите мне в личные сообщения: @Taxi56OrenUfabot")
+@dp.callback_query(F.data == "cancel")
+async def callback_cancel(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    await callback.message.edit_text(
+        "❌ **Действие отменено**\n\n"
+        "Выберите действие в меню:",
+        reply_markup=get_main_inline_keyboard()
+    )
+
+@dp.callback_query(F.data == "back_to_main")
+async def callback_back_to_main(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.clear()
+    await callback.message.edit_text(
+        f"🚕 **Добро пожаловать, {callback.from_user.first_name}!**\n\n"
+        "👇 **Выберите действие:**",
+        reply_markup=get_main_inline_keyboard()
+    )
+
+@dp.callback_query(F.data == "back_to_cities")
+async def callback_back_to_cities(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(OrderForm.waiting_from_city)
+    await callback.message.edit_text(
+        "📍 **Выберите город отправления:**",
+        reply_markup=get_cities_inline_keyboard()
+    )
+
+@dp.callback_query(F.data == "back_to_phone")
+async def callback_back_to_phone(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    await state.set_state(OrderForm.waiting_phone)
+    await callback.message.edit_text(
+        "📞 **Ваш номер телефона**\n\n"
+        "📝 **Примеры:** 89001234567, +7-900-123-45-67",
+        reply_markup=get_back_inline_keyboard()
+    )
+
+@dp.callback_query(F.data.startswith("calendar_"))
+async def callback_calendar(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = callback.data.split("_")
+    if data[1] != "ignore":
+        year = int(data[1])
+        month = int(data[2])
+        await callback.message.edit_reply_markup(reply_markup=get_calendar_keyboard(year, month))
+
+@dp.callback_query(F.data.startswith("date_"))
+async def callback_date_selected(callback: types.CallbackQuery, state: FSMContext):
+    date_str = callback.data.replace("date_", "")
+    
+    if is_date_past(date_str):
+        await callback.answer("❌ Нельзя выбрать прошедшую дату!", show_alert=True)
         return
     
-    await message.answer(
-        "❓ **Часто задаваемые вопросы**\n\n"
-        "Выберите интересующий вас вопрос:",
-        reply_markup=get_faq_keyboard()
+    await state.update_data(date=date_str)
+    await state.set_state(OrderForm.waiting_time)
+    await callback.message.edit_text(
+        f"📅 **Выбрана дата:** {date_str}\n\n"
+        f"⏰ **Выберите время отправления:**",
+        reply_markup=get_time_inline_keyboard()
     )
+
+@dp.callback_query(F.data.startswith("time_"))
+async def callback_time_selected(callback: types.CallbackQuery, state: FSMContext):
+    time_str = callback.data.replace("time_", "")
+    await state.update_data(time=time_str)
+    await state.set_state(OrderForm.waiting_phone)
+    
+    await callback.message.edit_text(
+        f"⏰ **Выбрано время:** {time_str}\n\n"
+        f"📞 **Ваш номер телефона**\n\n"
+        f"📝 **Примеры:** 89001234567, +7-900-123-45-67",
+        reply_markup=get_back_inline_keyboard()
+    )
+
+@dp.callback_query(F.data == "skip_comment")
+async def callback_skip_comment(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer()
+    data = await state.get_data()
+    await state.update_data(comment="Без комментария")
+    data['comment'] = "Без комментария"
+    
+    add_order(
+        user_id=callback.from_user.id,
+        username=data.get('username', callback.from_user.first_name),
+        from_city=data.get('from_city', ''),
+        to_city=data.get('to_city', ''),
+        order_date=data.get('date', ''),
+        order_time=data.get('time', ''),
+        phone=data.get('phone', ''),
+        comment="Без комментария"
+    )
+    
+    update_user_phone(callback.from_user.id, data.get('phone', ''))
+    
+    try:
+        await send_order_to_dispatcher(
+            order=data,
+            user_id=callback.from_user.id,
+            username=callback.from_user.username
+        )
+        
+        await callback.message.edit_text(
+            f"✅ **ЗАКАЗ УСПЕШНО ОТПРАВЛЕН!**\n\n"
+            f"📝 **Детали заказа:**\n"
+            f"📍 {data.get('from_city', '?')} → {data.get('to_city', '?')}\n"
+            f"📅 {data.get('date', '?')}\n"
+            f"⏰ {data.get('time', '?')}\n"
+            f"📞 {data.get('phone', '?')}\n"
+            f"💬 Комментарий: Без комментария\n\n"
+            f"🚕 **Диспетчер свяжется с вами в ближайшее время!**\n\n"
+            f"⭐ Спасибо, что выбрали наш сервис!",
+            reply_markup=get_main_inline_keyboard()
+        )
+        
+        await state.clear()
+        
+    except Exception as e:
+        logging.error(f"Ошибка: {e}")
+        await callback.message.edit_text(
+            "❌ **Ошибка при отправке заказа**\n\nПожалуйста, попробуйте позже.",
+            reply_markup=get_main_inline_keyboard()
+        )
+        await state.clear()
+
+# ========== ОБРАБОТЧИКИ ВЫБОРА ГОРОДОВ ==========
+
+@dp.callback_query(F.data.startswith("city_"))
+async def callback_city_selection(callback: types.CallbackQuery, state: FSMContext):
+    city = callback.data.replace("city_", "")
+    current_state = await state.get_state()
+    
+    if current_state == OrderForm.waiting_from_city:
+        await state.update_data(from_city=city)
+        await state.set_state(OrderForm.waiting_to_city)
+        await callback.message.edit_text(
+            f"📍 **Откуда:** {city}\n\n"
+            f"🏁 **Выберите город назначения:**",
+            reply_markup=get_cities_inline_keyboard()
+        )
+    elif current_state == OrderForm.waiting_to_city:
+        data = await state.get_data()
+        if city == data.get('from_city'):
+            await callback.answer("❌ Город назначения не может совпадать с городом отправления!", show_alert=True)
+            return
+        await state.update_data(to_city=city)
+        await state.set_state(OrderForm.waiting_date)
+        await callback.message.edit_text(
+            f"📍 **Маршрут:** {data.get('from_city')} → {city}\n\n"
+            f"📅 **Выберите дату поездки:**",
+            reply_markup=get_calendar_keyboard()
+        )
+    await callback.answer()
 
 # ========== РАЗВЁРНУТЫЕ FAQ ОТВЕТЫ ==========
 
-@dp.message(F.text == "💰 Стоимость проезда")
-async def faq_price(message: types.Message):
-    await message.answer(
+faq_answers = {
+    "faq_price": (
         "💰 **Стоимость проезда**\n\n"
         "Стоимость поездки рассчитывается индивидуально:\n\n"
         "• **Одно место:** 2300 руб.\n"
@@ -296,13 +545,10 @@ async def faq_price(message: types.Message):
         "  (комфортабельный автомобиль для компании)\n\n"
         "• **6-местное авто:** 13800 руб.\n"
         "  (микроавтобус для большой компании)\n\n"
-        "📞 **Точную стоимость уточняйте у диспетчера при оформлении заказа!**\n\n",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "⏰ Время выезда")
-async def faq_departure_time(message: types.Message):
-    await message.answer(
+        "📞 **Точную стоимость уточняйте у диспетчера при оформлении заказа!**"
+    ),
+    
+    "faq_time": (
         "⏰ **Время выезда**\n\n"
         "Доступное время отправления:\n\n"
         "🕐  6:00, 9:00\n"
@@ -312,13 +558,10 @@ async def faq_departure_time(message: types.Message):
         "⚠️ **Важно:**\n"
         "• Время в пути может меняться из-за погоды\n"
         "• При заказе указывайте точное время\n"
-        "• Диспетчер подтвердит наличие мест",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "🕐 Время в пути")
-async def faq_travel_time(message: types.Message):
-    await message.answer(
+        "• Диспетчер подтвердит наличие мест"
+    ),
+    
+    "faq_travel": (
         "🕐 **Время в пути**\n\n"
         "Стандартное время в пути между городами:\n\n"
         "• **Оренбург — Уфа:** 4-5 часов\n"
@@ -329,13 +572,10 @@ async def faq_travel_time(message: types.Message):
         "• Загруженность трассы\n"
         "• Время суток\n"
         "• Дорожные работы\n\n"
-        "📞 Диспетчер предупредит вас о возможных задержках.",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "📦 Посылки")
-async def faq_parcels(message: types.Message):
-    await message.answer(
+        "📞 Диспетчер предупредит вас о возможных задержках."
+    ),
+    
+    "faq_parcels": (
         "📦 **Перевозка посылок**\n\n"
         "Мы осуществляем доставку посылок между городами!\n\n"
         "💰 **Стоимость:** от 500 руб.\n"
@@ -345,13 +585,10 @@ async def faq_parcels(message: types.Message):
         "1. Оформите заказ с пометкой 'Посылка'\n"
         "2. Укажите вес и размеры\n"
         "3. Сообщите, кто будет отправлять и получать\n\n"
-        "📞 Для точного расчета стоимости свяжитесь с диспетчером.",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "🚕 Забрать до адреса")
-async def faq_address_delivery(message: types.Message):
-    await message.answer(
+        "📞 Для точного расчета стоимости свяжитесь с диспетчером."
+    ),
+    
+    "faq_address": (
         "🚕 **Забрать и довезти до адреса**\n\n"
         "Мы можем забрать вас от любого адреса и довезти до нужного места!\n\n"
         "💰 **Дополнительная плата:** от 300 руб.\n"
@@ -360,13 +597,10 @@ async def faq_address_delivery(message: types.Message):
         "📍 **Стандартные точки сбора (бесплатно):**\n"
         "• Оренбург: ТЦ Север\n"
         "• Уфа: Универмаг 'Уфа'\n\n"
-        "⚠️ **При оформлении заказа укажите точный адрес в комментарии!**",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "📍 Точки отправления")
-async def faq_departure_points(message: types.Message):
-    await message.answer(
+        "⚠️ **При оформлении заказа укажите точный адрес в комментарии!**"
+    ),
+    
+    "faq_points": (
         "📍 **Точки отправления и прибытия**\n\n"
         "🏁 **Оренбург:**\n"
         "ТЦ Север, пр. Дзержинского 23, вход 2\n\n"
@@ -377,13 +611,10 @@ async def faq_departure_points(message: types.Message):
         "• Салават — Автовокзал\n"
         "• Мелеуз — Автовокзал\n"
         "• Кумертау — КПМ\n\n"
-        "⚠️ **По другим адресам возможна подача с дополнительной платой.**",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "🐕 Животные")
-async def faq_animals(message: types.Message):
-    await message.answer(
+        "⚠️ **По другим адресам возможна подача с дополнительной платой.**"
+    ),
+    
+    "faq_animals": (
         "🐕 **Перевозка животных**\n\n"
         "✅ Да, мы перевозим животных!\n\n"
         "📋 **Правила перевозки:**\n"
@@ -392,272 +623,10 @@ async def faq_animals(message: types.Message):
         "• Животное не должно мешать водителю\n"
         "• Возможна дополнительная плата за уборку салона\n\n"
         "💰 **Стоимость:** уточняйте у диспетчера\n\n"
-        "⚠️ **Важно:** Укажите в комментарии к заказу, что вы будете с животным, а также породу и размер!",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "🧳 Багаж")
-async def faq_luggage(message: types.Message):
-    await message.answer(
+        "⚠️ **Важно:** Укажите в комментарии к заказу, что вы будете с животным, а также породу и размер!"
+    ),
+    
+    "faq_luggage": (
         "🧳 **Перевозка багажа**\n\n"
         "📋 **Правила перевозки багажа:**\n\n"
-        "• Средний чемодан уже входит в стоимость места (2300 руб.)\n"
-        "• Багаж перевозится бесплатно в пределах разумного\n"
-        "• Если у вас много багажа, укажите это в комментарии\n"
-        "• При необходимости можно заказать автомобиль с увеличенным багажником\n\n"
-        "📦 **Крупногабаритный багаж:**\n"
-        "• Велосипеды, лыжи, сноуборды\n"
-        "• Стоимость обсуждается отдельно\n\n"
-        "💡 **Совет:** Для крупногабаритного багажа уточните детали у диспетчера.",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "🚭 Курить в машине")
-async def faq_smoking(message: types.Message):
-    await message.answer(
-        "🚭 **Курение в автомобиле**\n\n"
-        "❌ **Курение в салоне автомобиля строго запрещено!**\n\n"
-        "💰 **Штраф за курение:** 5000 рублей\n"
-        "(на профессиональную химчистку салона)\n\n"
-        "✅ **Что можно делать:**\n"
-        "• Курить на остановках (попросите водителя)\n\n"
-        "📞 Если вам нужно покурить, попросите водителя сделать остановку.\n\n"
-        "✅ Благодарим за понимание и уважение к нашему транспорту!",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "📞 Контакты")
-async def faq_contacts(message: types.Message):
-    await message.answer(
-        "📞 **Контакты для связи**\n\n"
-        "📱 **По всем вопросам обращайтесь:**\n\n"
-        "• Диспетчерская служба: +79058907979\n"
-        "• Телефон диспетчера: +7 9292 80 7979\n\n"
-        "🕐 **Время работы диспетчерской:**\n"
-        "• Ежедневно: Круглосуточно\n"
-        "• Без выходных\n\n"
-        "📧 **Email для предложений:** orenufa56@gmail.com\n\n"
-        "💬 **Мы в соцсетях:**\n"
-        "• ВКонтакте: vk.com/ufaoren\n\n"
-        "📞 **Срочные вопросы звоните!**",
-        reply_markup=get_faq_keyboard()
-    )
-
-@dp.message(F.text == "🔙 Назад")
-async def back_to_faq(message: types.Message):
-    # Возвращаемся в главное меню
-    await message.answer(
-        "🔙 **Главное меню**\n\n"
-        "👇 **Нажмите на кнопку ниже, чтобы начать**",
-        reply_markup=get_main_keyboard()
-    )
-
-# ========== ОСНОВНОЙ ХЭНДЛЕР ЗАКАЗА (FSM) ==========
-
-@dp.message(StateFilter(OrderForm.waiting_name))
-async def process_name(message: types.Message, state: FSMContext):
-    if len(message.text) > 100:
-        await message.answer("❌ Имя слишком длинное! Введите имя короче:")
-        return
-    
-    await state.update_data(username=message.text)
-    await state.set_state(OrderForm.waiting_from_city)
-    
-    await message.answer(
-        f"👋 **Приятно познакомиться, {message.text}!**\n\n"
-        f"📍 **Выберите город отправления:**",
-        reply_markup=get_cities_keyboard()
-    )
-
-@dp.message(StateFilter(OrderForm.waiting_from_city))
-async def process_from_city(message: types.Message, state: FSMContext):
-    if message.text not in CITIES:
-        await message.answer("❌ Пожалуйста, выберите город из кнопок!", reply_markup=get_cities_keyboard())
-        return
-    
-    await state.update_data(from_city=message.text)
-    await state.set_state(OrderForm.waiting_to_city)
-    
-    await message.answer(
-        f"📍 **Откуда:** {message.text}\n\n"
-        f"🏁 **Выберите город назначения:**",
-        reply_markup=get_cities_keyboard()
-    )
-
-@dp.message(StateFilter(OrderForm.waiting_to_city))
-async def process_to_city(message: types.Message, state: FSMContext):
-    if message.text not in CITIES:
-        await message.answer("❌ Пожалуйста, выберите город из кнопок!", reply_markup=get_cities_keyboard())
-        return
-    
-    data = await state.get_data()
-    if message.text == data.get('from_city'):
-        await message.answer("❌ Город назначения не может совпадать с городом отправления!\nВыберите другой город.", reply_markup=get_cities_keyboard())
-        return
-    
-    await state.update_data(to_city=message.text)
-    await state.set_state(OrderForm.waiting_time)
-    
-    await message.answer(
-        f"📍 **Маршрут:** {data['from_city']} → {message.text}\n\n"
-        f"⏰ **Укажите дату и время подачи**\n\n"
-        f"📅 **Формат:** `04.04.26 в 15:00`\n"
-        f"📝 **Пример:** 25.12.26 в 09:30\n\n"
-        f"💡 **Доступное время:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00-23:00\n\n"
-        f"🔹 **Подсказка:** точки ставятся автоматически, просто вводите цифры",
-        reply_markup=ReplyKeyboardRemove()
-    )
-
-# ========== ИСПРАВЛЕННАЯ ФУНКЦИЯ С ПРОВЕРКОЙ ДАТЫ ==========
-
-@dp.message(StateFilter(OrderForm.waiting_time))
-async def process_time(message: types.Message, state: FSMContext):
-    formatted_time = format_time_with_dots(message.text)
-    
-    if not validate_time(formatted_time):
-        await message.answer(
-            f"❌ **Неверный формат!**\n\n"
-            f"Используйте формат: `04.04.26 в 15:00`\n\n"
-            f"📝 **Пример:** 2504261500 → 25.04.26 в 15:00"
-        )
-        return
-    
-    # ПРОВЕРКА: ДАТА НЕ ДОЛЖНА БЫТЬ ПРОШЕДШЕЙ
-    try:
-        # Извлекаем дату из строки (формат: 25.04.26 в 15:00)
-        date_part = formatted_time.split(' в ')[0]
-        time_part = formatted_time.split(' в ')[1]
-        
-        # Преобразуем в объект datetime
-        order_datetime = datetime.strptime(f"{date_part} {time_part}", "%d.%m.%y %H:%M")
-        current_datetime = datetime.now()
-        
-        # Если дата уже прошла
-        if order_datetime < current_datetime:
-            await message.answer(
-                f"❌ **Нельзя указать прошедшую дату!**\n\n"
-                f"Вы указали: {formatted_time}\n"
-                f"Текущее время: {current_datetime.strftime('%d.%m.%y в %H:%M')}\n\n"
-                f"📅 **Пожалуйста, укажите дату и время в будущем.**\n\n"
-                f"💡 **Совет:** выберите завтра или позже."
-            )
-            return
-        
-        # Дополнительная проверка: если дата сегодня, но время уже прошло
-        if order_datetime.date() == current_datetime.date() and order_datetime.time() < current_datetime.time():
-            await message.answer(
-                f"❌ **Указанное время уже прошло!**\n\n"
-                f"Вы указали: {formatted_time}\n"
-                f"Сейчас: {current_datetime.strftime('%H:%M')}\n\n"
-                f"⏰ **Пожалуйста, укажите время в будущем.**"
-            )
-            return
-            
-    except Exception as e:
-        logging.error(f"Ошибка проверки даты: {e}")
-        # Если ошибка при проверке, пропускаем (но лучше предупредить)
-        pass
-    
-    await state.update_data(time=formatted_time)
-    await state.set_state(OrderForm.waiting_phone)
-    
-    await message.answer(
-        f"⏰ **Время подачи:** {formatted_time}\n\n"
-        f"📞 **Ваш номер телефона**\n\n"
-        f"📝 **Примеры:** 89001234567, +7-900-123-45-67"
-    )
-
-@dp.message(StateFilter(OrderForm.waiting_phone))
-async def process_phone(message: types.Message, state: FSMContext):
-    if not validate_phone(message.text):
-        await message.answer(
-            "❌ **Неверный номер телефона!**\n\n"
-            "📝 **Примеры правильного ввода:**\n"
-            "• 89001234567\n"
-            "• +7-900-123-45-67\n\n"
-            "Попробуйте еще раз:"
-        )
-        return
-    
-    await state.update_data(phone=message.text)
-    await state.set_state(OrderForm.waiting_comment)
-    
-    await message.answer(
-        "💬 **Дополнительные пожелания?**\n\n"
-        "Вы можете написать комментарий или нажать кнопку 'Пропустить'\n\n"
-        "📝 **Примеры:**\n"
-        "• Нужно детское кресло\n"
-        "• Будет много багажа\n"
-        "• Едем с животным",
-        reply_markup=get_skip_keyboard()
-    )
-
-@dp.message(StateFilter(OrderForm.waiting_comment))
-async def process_comment(message: types.Message, state: FSMContext):
-    data = await state.get_data()
-    
-    # Получаем комментарий
-    if message.text == "⏩ Пропустить":
-        comment = "Без комментария"
-    else:
-        comment = message.text
-    
-    # СОХРАНЯЕМ КОММЕНТАРИЙ
-    await state.update_data(comment=comment)
-    
-    # Обновляем локальные данные для отправки
-    data['comment'] = comment
-    
-    # Отладка в логах
-    logging.info(f"📝 Комментарий от {message.from_user.id}: {comment}")
-    
-    try:
-        # Отправляем заказ диспетчеру (используем обновлённые данные)
-        await send_order_to_dispatcher(
-            order=data,
-            user_id=message.from_user.id,
-            username=message.from_user.username
-        )
-        
-        await message.answer(
-            f"✅ **ЗАКАЗ УСПЕШНО ОТПРАВЛЕН!**\n\n"
-            f"📝 **Детали заказа:**\n"
-            f"📍 {data.get('from_city', '?')} → {data.get('to_city', '?')}\n"
-            f"⏰ {data.get('time', '?')}\n"
-            f"📞 {data.get('phone', '?')}\n"
-            f"💬 Комментарий: {comment}\n\n"
-            f"🚕 **Диспетчер свяжется с вами в ближайшее время!**\n\n"
-            f"Для нового заказа нажмите '🚕 Новый заказ'",
-            reply_markup=get_main_keyboard()
-        )
-        
-        await state.clear()
-        
-    except Exception as e:
-        logging.error(f"Ошибка отправки заказа: {e}")
-        await message.answer(
-            f"❌ **Ошибка при отправке заказа**\n\n"
-            f"Пожалуйста, попробуйте позже.\n\n"
-            f"Для нового заказа нажмите '🚕 Новый заказ'",
-            reply_markup=get_main_keyboard()
-        )
-        await state.clear()
-
-# ========== ЗАПУСК БОТА ==========
-async def main():
-    print("=" * 60)
-    print("🤖 TELEGRAM ТАКСИ БОТ")
-    print("=" * 60)
-    print("📨 Заказы отправляются диспетчеру")
-    print("=" * 60)
-    
-    # Отправляем и закрепляем кнопку в группе
-    await send_and_pin_button()
-    
-    print("✅ Бот запущен и готов к работе!")
-    print("=" * 60)
-    
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+        "• Средний чемодан
