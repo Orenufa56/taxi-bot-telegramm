@@ -18,8 +18,14 @@ from database import init_db, add_user, update_user_phone, add_order, get_user_h
 
 # ========== НАСТРОЙКИ ==========
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-DISPATCHER_CHAT_ID = "-1003980266463"
-CLIENT_GROUP_ID = "-1003898088390"
+DISPATCHER_CHAT_ID = "-1003980266463"              # Группа диспетчеров (куда приходят заказы)
+
+# СПИСОК ГРУПП КЛИЕНТОВ (можно добавлять сколько угодно)
+CLIENT_GROUP_IDS = [
+    "-1003898088390",    # Группа клиентов 1
+    "-1003599431974",    # Группа клиентов 2
+    # "-100НОВЫЙ_ID_3",  # Раскомментируйте и добавьте ID третьей группы
+]
 # =================================
 
 logging.basicConfig(level=logging.INFO)
@@ -176,41 +182,42 @@ class OrderForm(StatesGroup):
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
 
 async def send_and_pin_button():
-    """Отправляет и закрепляет кнопку в группе"""
-    try:
+    """Отправляет кнопку во все группы клиентов и закрепляет её"""
+    for group_id in CLIENT_GROUP_IDS:
         try:
-            chat_info = await bot.get_chat(chat_id=CLIENT_GROUP_ID)
-            if chat_info.pinned_message:
-                await bot.unpin_chat_message(chat_id=CLIENT_GROUP_ID)
-        except:
-            pass
-        
-        msg = await bot.send_message(
-            chat_id=CLIENT_GROUP_ID,
-            text="🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
-                 "📋 **Как оформить заказ:**\n\n"
-                 "1️⃣ Нажмите на кнопку ниже\n"
-                 "2️⃣ В личном чате с ботом нажмите /start\n"
-                 "3️⃣ Выберите '🚕 Новый заказ' и следуйте инструкциям\n\n"
-                 "💰 **Стоимость:**\n"
-                 "• Место: 2300 руб.\n"
-                 "• 4-местное авто: 9200 руб.\n"
-                 "• 6-местное авто: 13800 руб.\n\n"
-                 "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00-23:00\n\n"
-                 "📍 **Точки отправления:**\n"
-                 "• Оренбург: ТЦ Север\n"
-                 "• Уфа: Универмаг 'Уфа'\n\n"
-                 "📞 **Контакты диспетчера:** +7 9292 80 7979\n\n"
-                 "👇 **Нажмите на кнопку ниже, чтобы оформить заказ**",
-            reply_markup=get_group_button(),
-            parse_mode="Markdown"
-        )
-        await bot.pin_chat_message(chat_id=CLIENT_GROUP_ID, message_id=msg.message_id)
-        logging.info("✅ Кнопка отправлена и закреплена в группе клиентов!")
-        return True
-    except Exception as e:
-        logging.error(f"❌ Ошибка: {e}")
-        return False
+            # Удаляем старые закреплённые сообщения
+            try:
+                chat_info = await bot.get_chat(chat_id=group_id)
+                if chat_info.pinned_message:
+                    await bot.unpin_chat_message(chat_id=group_id)
+            except:
+                pass
+            
+            # Отправляем новое сообщение с кнопкой
+            msg = await bot.send_message(
+                chat_id=group_id,
+                text="🚕 **Бот для заказа такси Оренбург - Уфа**\n\n"
+                     "📋 **Как оформить заказ:**\n\n"
+                     "1️⃣ Нажмите на кнопку ниже\n"
+                     "2️⃣ В личном чате с ботом нажмите /start\n"
+                     "3️⃣ Выберите '🚕 Новый заказ' и следуйте инструкциям\n\n"
+                     "💰 **Стоимость:**\n"
+                     "• Место: 2300 руб.\n"
+                     "• 4-местное авто: 9200 руб.\n"
+                     "• 6-местное авто: 13800 руб.\n\n"
+                     "⏰ **Время выезда:** 6:00, 9:00, 12:00, 15:00, 18:00, 21:00-23:00\n\n"
+                     "📍 **Точки отправления:**\n"
+                     "• Оренбург: ТЦ Север\n"
+                     "• Уфа: Универмаг 'Уфа'\n\n"
+                     "📞 **Контакты диспетчера:** +7 9292 80 7979\n\n"
+                     "👇 **Нажмите на кнопку ниже, чтобы оформить заказ**",
+                reply_markup=get_group_button(),
+                parse_mode="Markdown"
+            )
+            await bot.pin_chat_message(chat_id=group_id, message_id=msg.message_id)
+            logging.info(f"✅ Кнопка отправлена и закреплена в группе {group_id}!")
+        except Exception as e:
+            logging.error(f"❌ Ошибка при отправке в группу {group_id}: {e}")
 
 def validate_phone(phone: str) -> bool:
     """Проверка номера телефона"""
@@ -649,6 +656,7 @@ async def main():
     print("🤖 TELEGRAM ТАКСИ БОТ")
     print("=" * 60)
     print("📨 Заказы отправляются диспетчеру")
+    print(f"📋 Количество групп клиентов: {len(CLIENT_GROUP_IDS)}")
     print("=" * 60)
     
     await send_and_pin_button()
