@@ -22,8 +22,7 @@ from database import (
 )
 
 # ========== НАСТРОЙКИ ==========
-BOT_TOKEN = 8660595493:AAGUkxKgKNABBWQ5RRrvF4BTsBon3y34FBg
-("BOT_TOKEN")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
 DISPATCHER_CHAT_ID = "-1003980266463"
 CLIENT_GROUP_IDS = [
     "-1003898088390",
