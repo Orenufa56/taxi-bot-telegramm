@@ -1,22 +1,12 @@
 import sqlite3
-import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
-DB_PATH = "taxi_bot.db"
-
-# Флаг для отслеживания инициализации (ГЛОБАЛЬНЫЙ)
-_DB_INITIALIZED = False
+DB_NAME = "taxi_bot.db"
 
 def init_db():
-    """Инициализация базы данных (только один раз)"""
-    global _DB_INITIALIZED
-    if _DB_INITIALIZED:
-        return
-    
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
     
-    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -24,13 +14,13 @@ def init_db():
             first_name TEXT,
             last_name TEXT,
             phone TEXT,
+            first_seen TEXT,
             total_orders INTEGER DEFAULT 0,
-            created_at TEXT,
-            last_order_at TEXT
+            bonus_points INTEGER DEFAULT 0,
+            used_bonus INTEGER DEFAULT 0
         )
     ''')
     
-    # Таблица заказов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS orders (
             order_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -41,87 +31,157 @@ def init_db():
             order_date TEXT,
             order_time TEXT,
             phone TEXT,
+            seats INTEGER DEFAULT 1,
             comment TEXT,
-            status TEXT DEFAULT 'new',
-            created_at TEXT,
-            FOREIGN KEY (user_id) REFERENCES users (user_id)
+            price_per_seat INTEGER,
+            price INTEGER,
+            bonus_earned INTEGER DEFAULT 0,
+            bonus_used INTEGER DEFAULT 0,
+            final_price INTEGER,
+            status TEXT DEFAULT 'новый',
+            created_at TEXT
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS bonus_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            order_id INTEGER,
+            amount INTEGER,
+            type TEXT,
+            description TEXT,
+            created_at TEXT
         )
     ''')
     
     conn.commit()
     conn.close()
-    _DB_INITIALIZED = True
-    logging.info("✅ База данных инициализирована (один раз)")
 
-def add_user(user_id: int, username: str, first_name: str, last_name: str = None):
-    conn = sqlite3.connect(DB_PATH)
+def add_user(user_id, username=None, first_name=None, last_name=None):
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT OR REPLACE INTO users (user_id, username, first_name, last_name, created_at)
-        VALUES (?, ?, ?, ?, ?)
-    ''', (user_id, username, first_name, last_name, datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    
+    cursor.execute("SELECT user_id FROM users WHERE user_id = ?", (user_id,))
+    if not cursor.fetchone():
+        first_seen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cursor.execute(
+            "INSERT INTO users (user_id, username, first_name, last_name, first_seen, total_orders, bonus_points, used_bonus) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (user_id, username, first_name, last_name, first_seen, 0, 0, 0)
+        )
+        conn.commit()
+    conn.close()
+
+def update_user_name(user_id, name):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET username = ? WHERE user_id = ?", (name, user_id))
     conn.commit()
     conn.close()
 
-def update_user_phone(user_id: int, phone: str):
-    conn = sqlite3.connect(DB_PATH)
+def update_user_phone(user_id, phone):
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
+    cursor.execute("UPDATE users SET phone = ? WHERE user_id = ?", (phone, user_id))
+    conn.commit()
+    conn.close()
+
+def get_user_bonus(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT bonus_points, used_bonus FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row if row else (0, 0)
+
+def add_bonus(user_id, amount, order_id, description):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET bonus_points = bonus_points + ? WHERE user_id = ?", (amount, user_id))
+    cursor.execute(
+        "INSERT INTO bonus_history (user_id, order_id, amount, type, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, order_id, amount, "earned", description, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    )
+    conn.commit()
+    conn.close()
+
+def use_bonus(user_id, amount, order_id, description):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET bonus_points = bonus_points - ?, used_bonus = used_bonus + ? WHERE user_id = ?", (amount, amount, user_id))
+    cursor.execute(
+        "INSERT INTO bonus_history (user_id, order_id, amount, type, description, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        (user_id, order_id, amount, "used", description, datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    )
+    conn.commit()
+    conn.close()
+
+def add_order(user_id, username, from_city, to_city, order_date, order_time, phone, seats, comment, price_per_seat, price, bonus_earned, bonus_used, final_price):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cursor.execute('''
-        UPDATE users SET phone = ?, last_order_at = ?
-        WHERE user_id = ?
-    ''', (phone, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id))
-    
+        INSERT INTO orders (user_id, username, from_city, to_city, order_date, order_time, phone, seats, comment, price_per_seat, price, bonus_earned, bonus_used, final_price, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, username, from_city, to_city, order_date, order_time, phone, seats, comment, price_per_seat, price, bonus_earned, bonus_used, final_price, created_at))
+    order_id = cursor.lastrowid
+    cursor.execute("UPDATE users SET total_orders = total_orders + 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+    return order_id
+
+def get_user_history(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
     cursor.execute('''
-        UPDATE users SET total_orders = total_orders + 1
-        WHERE user_id = ?
+        SELECT from_city, to_city, order_date, order_time, seats, price, bonus_earned, bonus_used, final_price, status
+        FROM orders WHERE user_id = ? ORDER BY created_at DESC LIMIT 10
     ''', (user_id,))
-    
-    conn.commit()
+    rows = cursor.fetchall()
     conn.close()
+    return rows
 
-def add_order(user_id: int, username: str, from_city: str, to_city: str, 
-              order_date: str, order_time: str, phone: str, comment: str):
-    conn = sqlite3.connect(DB_PATH)
+def get_user_stats(user_id):
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        INSERT INTO orders (user_id, username, from_city, to_city, order_date, order_time, phone, comment, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ''', (user_id, username, from_city, to_city, order_date, order_time, phone, comment, 
-          datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-    
-    conn.commit()
+    cursor.execute("SELECT total_orders, phone, first_name, username, bonus_points, used_bonus FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
     conn.close()
+    return row
 
-def get_user_history(user_id: int, limit: int = 10):
-    conn = sqlite3.connect(DB_PATH)
+def get_user_name(user_id):
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT from_city, to_city, order_date, order_time, created_at, status
-        FROM orders
-        WHERE user_id = ?
-        ORDER BY created_at DESC
-        LIMIT ?
-    ''', (user_id, limit))
-    
-    orders = cursor.fetchall()
+    cursor.execute("SELECT username FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
     conn.close()
-    return orders
+    return row[0] if row else None
 
-def get_user_stats(user_id: int):
-    conn = sqlite3.connect(DB_PATH)
+def get_user_total_orders(user_id):
+    conn = sqlite3.connect(DB_NAME)
     cursor = conn.cursor()
-    
+    cursor.execute("SELECT total_orders FROM users WHERE user_id = ?", (user_id,))
+    row = cursor.fetchone()
+    conn.close()
+    return row[0] if row else 0
+
+def get_user_last_order(user_id):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
     cursor.execute('''
-        SELECT total_orders, phone, created_at, last_order_at
-        FROM users
-        WHERE user_id = ?
+        SELECT order_date, from_city, to_city, price_per_seat, price
+        FROM orders 
+        WHERE user_id = ? 
+        ORDER BY created_at DESC 
+        LIMIT 1
     ''', (user_id,))
-    
-    stats = cursor.fetchone()
+    row = cursor.fetchone()
     conn.close()
-    return stats
+    return row
+
+def get_user_orders_by_status(user_id, status):
+    conn = sqlite3.connect(DB_NAME)
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) FROM orders WHERE user_id = ? AND status = ?", (user_id, status))
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
